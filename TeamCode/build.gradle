@@ -1,15 +1,20 @@
 //
 // build.gradle in TeamCode
 //
-// Most of the definitions for building your module reside in a common, shared
-// file 'build.common.gradle'. Being factored in this way makes it easier to
-// integrate updates to the FTC into your code. If you really need to customize
-// the build definitions, you can place those customizations in this file, but
-// please think carefully as to whether such customizations are really necessary
-// before doing so.
 
-
-// Custom definitions may go here
+// ----------------------------------------------------
+// 1. ADD THE REPOSITORY BLOCK HERE
+// This tells Gradle *where* to find the FTCLib and Road Runner library files.
+// ----------------------------------------------------
+repositories {
+    // This is required for the FTCLib dependency
+    mavenCentral()
+    // This is required for the Road Runner dependencies
+    maven {
+        url = 'https://maven.brott.dev'
+    }
+}
+// ----------------------------------------------------
 
 // Include common definitions from above.
 apply from: '../build.common.gradle'
@@ -23,6 +28,20 @@ android {
     }
 }
 
+// ----------------------------------------------------
+// **CRITICAL FIX:** ALL 'implementation' LINES MUST GO HERE
+// ----------------------------------------------------
 dependencies {
     implementation project(':FtcRobotController')
+
+    // --- Road Runner Dependencies ---
+    implementation "com.acmerobotics.roadrunner:ftc:0.1.25"
+    implementation "com.acmerobotics.roadrunner:core:1.0.1"
+    implementation "com.acmerobotics.roadrunner:actions:1.0.1"
+    implementation "com.acmerobotics.dashboard:dashboard:0.5.1"
+
+    // --- FTCLib Dependency ---
+    implementation 'org.ftclib.ftclib:core:2.1.1'
+    // If you need the vision module as well, include:
+    // implementation 'org.ftclib.ftclib:vision:2.1.1'
 }
