@@ -49,11 +49,20 @@ public class PinpointDrive extends MecanumDrive {
 
     @Override
     public PoseVelocity2d updatePoseEstimate() {
+        if (pinpoint == null) throw new RuntimeException("Pinpoint device is null! Check your config name matches: " + PARAMS.pinpointDeviceName);
         pinpoint.update();
+        
+        if (pose == null) {
+            // Attempt to recover or just fail with clear message
+            throw new RuntimeException("drive.pose is null! This should not happen.");
+        }
+
         if (lastPinpointPose != pose) {
             pinpoint.setPosition(rrPoseToFtcPose(pose));
         }
         Pose2D ftcPose = pinpoint.getPosition();
+        if (ftcPose == null) throw new RuntimeException("Pinpoint getPosition() returned null!");
+
         pose = new Pose2d(
                 ftcPose.getX(DistanceUnit.INCH),
                 ftcPose.getY(DistanceUnit.INCH),

@@ -17,6 +17,7 @@ public class ShootingPresets {
     public static final double DIST_FAR   = 36.0;
 
     // --- CAMERA CONSTANTS (Measure these!) ---
-    public static final double CAMERA_HEIGHT = 10.0; // Height of Limelight from floor
+    public static final double CAMERA_HEIGHT = 7.5; // Height of Limelight from floor
     public static final double CAMERA_ANGLE  = 15.0; // Mounting angle in degrees
+    public static final double CAMERA_OFFSET = 6.0; // Distance from center of rotation (forward is positive)
 }

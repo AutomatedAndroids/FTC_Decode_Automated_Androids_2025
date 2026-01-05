@@ -23,7 +23,7 @@ public class AutoOpModePathPlan extends CommandOpMode {
         Pose2d startPose = new Pose2d(0, 0, Math.toRadians(0));
 
         // 2. Init Subsystem
-        driveSubsystem = new MecanumSubsystem(hardwareMap, startPose);
+        driveSubsystem = new MecanumSubsystem(hardwareMap, startPose, true);
 
         // (Initialize other subsystems here...)
 

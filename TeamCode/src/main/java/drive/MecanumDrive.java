@@ -161,10 +161,10 @@ public class MecanumDrive {
         }
 
         // TODO: MAKE SURE THESE NAMES MATCH YOUR CONFIG ON THE ROBOT
-        leftFront = hardwareMap.get(DcMotorEx.class, "leftFront");
-        leftBack = hardwareMap.get(DcMotorEx.class, "leftBack");
-        rightBack = hardwareMap.get(DcMotorEx.class, "rightBack");
-        rightFront = hardwareMap.get(DcMotorEx.class, "rightFront");
+        leftFront = hardwareMap.get(DcMotorEx.class, "fL");
+        leftBack = hardwareMap.get(DcMotorEx.class, "bL");
+        rightBack = hardwareMap.get(DcMotorEx.class, "bR");
+        rightFront = hardwareMap.get(DcMotorEx.class, "fR");
 
         leftFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         leftBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);

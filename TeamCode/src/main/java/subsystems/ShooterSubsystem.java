@@ -9,8 +9,8 @@ import org.firstinspires.ftc.robotcore.external.Telemetry;
 
 public class ShooterSubsystem extends SubsystemBase{
 
-    private CRServo feeder;
-    private MotorEx shooter;
+    private CRServo leftFeeder, rightFeeder;
+    private MotorEx shooterMotor;
     private Telemetry telemetry;
 
     // --- CONFIGURATION ---
@@ -23,13 +23,14 @@ public class ShooterSubsystem extends SubsystemBase{
     // Calculate Ticks Per Second: (RPM / 60) * TicksPerRev
     private static final double TARGET_VELOCITY = (TARGET_RPM / 60.0) * TICKS_PER_REV;
 
-    public ShooterSubsystem(CRServo feeder, MotorEx shooter, Telemetry telemetry) {
-        this.feeder = feeder;
-        this.shooter = shooter;
+    public ShooterSubsystem(CRServo leftFeeder, CRServo rightFeeder, MotorEx shooterMotor, Telemetry telemetry) {
+        this.leftFeeder = leftFeeder;
+        this.rightFeeder = rightFeeder;
+        this.shooterMotor = shooterMotor;
         this.telemetry = telemetry;
 
 
-        shooter.setRunMode(Motor.RunMode.RawPower);
+        shooterMotor.setRunMode(Motor.RunMode.RawPower);
 
 
 //        // Configure Motor for Velocity Control
@@ -56,25 +57,45 @@ public class ShooterSubsystem extends SubsystemBase{
         // 2. Set the power. This acts as the maximum power the PID controller
         // is allowed to use to reach and maintain the target velocity.
         // Set it to 1.0 to give the controller full authority.
-        shooter.set(0.85);
+        shooterMotor.set(0.65);
     }
 
     public void shoot_close() {
-        shooter.set(0.65);
+        shooterMotor.set(0.55);
     }
 
+    public void feedLeft() {
+        leftFeeder.set(1);
+    }
+
+    public void feedRight() {
+        rightFeeder.set(1);
+    }
 
     public void feed() {
-        feeder.set(1);
+
+        leftFeeder.set(1);
+        rightFeeder.set(1);
+    }
+
+    public void stopLeft() {
+        leftFeeder.set(0);
+        // Ensures velocity is cleared
+    }
+
+    public void stopRight() {
+        rightFeeder.set(0);
+        // Ensures velocity is cleared
     }
 
     public void stopFeeding() {
-        feeder.set(0);
+        leftFeeder.set(0);
+        rightFeeder.set(0);
         // Ensures velocity is cleared
     }
 
     public void stopFlywheels() {
-        shooter.set(0);
+        shooterMotor.set(0);
         // Ensures velocity is cleared
     }
 

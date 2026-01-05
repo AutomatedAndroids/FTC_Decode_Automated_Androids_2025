@@ -9,32 +9,27 @@ import org.firstinspires.ftc.robotcore.external.Telemetry;
 
 public class IntakeSubsystem extends SubsystemBase {
     private Motor intakeMotor;
-    private Servo sortArmLeft;
-    private Servo sortArmRight;
+    private Servo sortArm;
     private Telemetry telemetry;
 
-    public IntakeSubsystem(Motor intakeMotor, Servo sortArmLeft, Servo sortArmRight, Telemetry telemetry) {
+    public IntakeSubsystem(Motor intakeMotor, Servo sortArm, Telemetry telemetry) {
         this.intakeMotor = intakeMotor;
-        this.sortArmLeft = sortArmLeft;
-        this.sortArmRight = sortArmRight;
+        this.sortArm = sortArm;
         this.telemetry = telemetry;
     }
 
     public void sort(boolean side) { //false is left, true is right
         if (side) {
-            sortArmLeft.setPosition(0.75);
-            sortArmRight.setPosition(-0.75);
+            sortArm.setPosition(0.75);
             telemetry.addData("Sorting to the right", "");
         } else {
-            sortArmLeft.setPosition(-0.75);
-            sortArmRight.setPosition(0.75);
+            sortArm.setPosition(-0.75);
             telemetry.addData("Sorting to the left", "");
         }
     }
 
     public void sort(){
-        sortArmLeft.setPosition(-0.75);
-        sortArmRight.setPosition(-0.75);
+        sortArm.setPosition(0.75);
     }
 
     public void turnOnIntake() {
