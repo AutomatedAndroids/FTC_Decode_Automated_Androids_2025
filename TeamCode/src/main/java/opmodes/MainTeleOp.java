@@ -28,6 +28,7 @@ public class MainTeleOp extends CommandOpMode {
     private ShooterSubsystem shooter;
     private IntakeSubsystem intake;
 
+
     @Override
     public void run() {
         super.run();
@@ -41,7 +42,7 @@ public class MainTeleOp extends CommandOpMode {
         limelight.start();
 
         // 1. Initialize Subsystems
-        drive = new MecanumSubsystem(hardwareMap, new Pose2d(0,0,0), true);
+        drive = new MecanumSubsystem(hardwareMap, new Pose2d(0,0,0), true, telemetry);
         
         try {
             CRServo leftFeeder = new CRServo(hardwareMap, "leftFeeder");
@@ -56,8 +57,10 @@ public class MainTeleOp extends CommandOpMode {
             Motor intakeMotor = new Motor(hardwareMap, "intake");
             Servo sortArm = hardwareMap.get(Servo.class, "sortArm");
             intake = new IntakeSubsystem(intakeMotor, sortArm, telemetry);
+
         } catch (Exception e) {
             telemetry.addData("Warning", "Intake failed to init");
+            telemetry.addData("Warning", e);
         }
 
         // 2. Initialize Gamepads
@@ -113,11 +116,11 @@ public class MainTeleOp extends CommandOpMode {
 
         // Feeders (Triggers)
         if (shooter != null) {
-            new Trigger(() -> driverOp.getTrigger(GamepadKeys.Trigger.LEFT_TRIGGER) > 0.1)
+            new Trigger(() -> driverOp.getTrigger(GamepadKeys.Trigger.LEFT_TRIGGER) > 0)
                     .whileActiveContinuous(new InstantCommand(shooter::feedLeft))
                     .whenInactive(new InstantCommand(shooter::stopLeft));
 
-            new Trigger(() -> driverOp.getTrigger(GamepadKeys.Trigger.RIGHT_TRIGGER) > 0.1)
+            new Trigger(() -> driverOp.getTrigger(GamepadKeys.Trigger.RIGHT_TRIGGER) > 0)
                     .whileActiveContinuous(new InstantCommand(shooter::feedRight))
                     .whenInactive(new InstantCommand(shooter::stopRight));
         }
@@ -127,7 +130,7 @@ public class MainTeleOp extends CommandOpMode {
         // Flywheel Spin Up (A = Shoot Far, B = Stop)
         if (shooter != null) {
             operatorOp.getGamepadButton(GamepadKeys.Button.A)
-                    .whenPressed(new InstantCommand(shooter::shoot_far));
+                    .whenPressed(new InstantCommand(shooter::shoot_close));
             
             operatorOp.getGamepadButton(GamepadKeys.Button.B)
                     .whenPressed(new InstantCommand(shooter::stopFlywheels));
@@ -135,6 +138,7 @@ public class MainTeleOp extends CommandOpMode {
 
         // Sort Arm (Bumpers)
         if (intake != null) {
+            telemetry.addData("the command got initialized", 0);
             operatorOp.getGamepadButton(GamepadKeys.Button.LEFT_BUMPER)
                     .whenPressed(new InstantCommand(() -> intake.sort(false))); // Left
 
@@ -145,6 +149,9 @@ public class MainTeleOp extends CommandOpMode {
             new Trigger(() -> operatorOp.getTrigger(GamepadKeys.Trigger.RIGHT_TRIGGER) > 0.1)
                     .whileActiveContinuous(new InstantCommand(intake::turnOnIntake))
                     .whenInactive(new InstantCommand(intake::turnOffIntake));
+        }
+        else {
+            telemetry.addData("intake is null??????", 0);
         }
     }
 }

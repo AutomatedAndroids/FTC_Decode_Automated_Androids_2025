@@ -63,7 +63,7 @@ public class MecanumDrive {
         public RevHubOrientationOnRobot.LogoFacingDirection logoFacingDirection =
                 RevHubOrientationOnRobot.LogoFacingDirection.UP;
         public RevHubOrientationOnRobot.UsbFacingDirection usbFacingDirection =
-                RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+                RevHubOrientationOnRobot.UsbFacingDirection.LEFT;
 
         // Drive Constants
         public double inPerTick = 1;
@@ -138,7 +138,7 @@ public class MecanumDrive {
             rightBack = new OverflowEncoder(new RawEncoder(MecanumDrive.this.rightBack));
             rightFront = new OverflowEncoder(new RawEncoder(MecanumDrive.this.rightFront));
 
-            imu = lazyImu.get();
+            imu = lazyImu != null ? lazyImu.get() : null;
         }
 
         @Override
@@ -172,15 +172,27 @@ public class MecanumDrive {
         rightFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         // TODO: REVERSE MOTORS HERE IF NEEDED
-        leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
-        leftBack.setDirection(DcMotorSimple.Direction.REVERSE);
+        rightBack.setDirection(DcMotorSimple.Direction.REVERSE);
+        rightFront.setDirection(DcMotorSimple.Direction.REVERSE);
 
-        lazyImu = new LazyImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
-                PARAMS.logoFacingDirection, PARAMS.usbFacingDirection));
+        LazyImu tmpImu = null;
+        try {
+            tmpImu = new LazyImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
+                    PARAMS.logoFacingDirection, PARAMS.usbFacingDirection));
+        } catch (Exception e) {
+            // IMU not found or failed to initialize (e.g. using Pinpoint)
+        }
+        lazyImu = tmpImu;
 
         voltageSensor = hardwareMap.voltageSensor.iterator().next();
 
-        localizer = new DriveLocalizer();
+        if (lazyImu != null) {
+            localizer = new DriveLocalizer();
+        } else {
+            // Fallback if IMU fails - this likely means we need another localizer (Pinpoint)
+            // We set localizer to null here, but subclasses (PinpointDrive) should override updatePoseEstimate
+            localizer = new DriveLocalizer(); // Attempt to init anyway to avoid NPEs if logic depends on it
+        }
     }
 
     public void setDrivePowers(PoseVelocity2d powers) {

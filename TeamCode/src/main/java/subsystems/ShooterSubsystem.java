@@ -65,7 +65,7 @@ public class ShooterSubsystem extends SubsystemBase{
     }
 
     public void feedLeft() {
-        leftFeeder.set(1);
+        leftFeeder.set(-1);
     }
 
     public void feedRight() {
@@ -102,6 +102,5 @@ public class ShooterSubsystem extends SubsystemBase{
     @Override
     public void periodic() {
         super.periodic();
-        telemetry.addData("Is this even running", "yes");
     }
 }

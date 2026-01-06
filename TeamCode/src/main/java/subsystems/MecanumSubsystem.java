@@ -7,12 +7,19 @@ import com.acmerobotics.roadrunner.Vector2d;
 import com.arcrobotics.ftclib.command.SubsystemBase;
 import com.arcrobotics.ftclib.controller.PIDController;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+
+import org.firstinspires.ftc.robotcore.external.Telemetry;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
+
 import drive.MecanumDrive;
 import drive.PinpointDrive;
 
 public class MecanumSubsystem extends SubsystemBase {
 
-    private final MecanumDrive drive;
+    private final Telemetry telemetry;
+    private MecanumDrive drive;
     private final PIDController alignController;
     private final PIDController distanceController;
 
@@ -25,7 +32,8 @@ public class MecanumSubsystem extends SubsystemBase {
     public static double kI_dist = 0.0;
     public static double kD_dist = 0.001;
 
-    public MecanumSubsystem(HardwareMap hardwareMap, Pose2d startPose, boolean usePinpoint) {
+    public MecanumSubsystem(HardwareMap hardwareMap, Pose2d startPose, boolean usePinpoint, Telemetry telemetry) {
+        this.telemetry = telemetry;
         if (usePinpoint) {
             try {
                 drive = new PinpointDrive(hardwareMap, startPose);
@@ -43,7 +51,25 @@ public class MecanumSubsystem extends SubsystemBase {
 
     @Override
     public void periodic() {
-        drive.updatePoseEstimate();
+        if (drive != null) {
+            drive.updatePoseEstimate();
+        
+            if (telemetry != null) {
+                telemetry.addData("Robot Pose X", drive.pose.position.x);
+                telemetry.addData("Robot Pose Y", drive.pose.position.y);
+                telemetry.addData("Robot Heading", Math.toDegrees(drive.pose.heading.toDouble()));
+
+                if (drive instanceof PinpointDrive) {
+                    PinpointDrive ppDrive = (PinpointDrive) drive;
+                    if (ppDrive.pinpoint != null) {
+                        Pose2D pos = ppDrive.pinpoint.getPosition();
+                        telemetry.addData("Pinpoint X (in)", pos.getX(DistanceUnit.INCH));
+                        telemetry.addData("Pinpoint Y (in)", pos.getY(DistanceUnit.INCH));
+                        telemetry.addData("Pinpoint Heading (deg)", pos.getHeading(AngleUnit.DEGREES));
+                    }
+                }
+            }
+        }
     }
 
     public void drive(double strafe, double forward, double turn) {

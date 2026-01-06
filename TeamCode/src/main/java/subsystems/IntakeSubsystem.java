@@ -12,6 +12,10 @@ public class IntakeSubsystem extends SubsystemBase {
     private Servo sortArm;
     private Telemetry telemetry;
 
+    private final double middle = 0.47;
+    private final double swing = 0.19;
+
+
     public IntakeSubsystem(Motor intakeMotor, Servo sortArm, Telemetry telemetry) {
         this.intakeMotor = intakeMotor;
         this.sortArm = sortArm;
@@ -20,12 +24,14 @@ public class IntakeSubsystem extends SubsystemBase {
 
     public void sort(boolean side) { //false is left, true is right
         if (side) {
-            sortArm.setPosition(0.75);
+            sortArm.setPosition(middle - swing);
             telemetry.addData("Sorting to the right", "");
         } else {
-            sortArm.setPosition(-0.75);
+            sortArm.setPosition(middle + swing);
             telemetry.addData("Sorting to the left", "");
         }
+        telemetry.addData("Servo Pos", sortArm.getPosition());
+
     }
 
     public void sort(){
@@ -44,6 +50,7 @@ public class IntakeSubsystem extends SubsystemBase {
 
     @Override
     public void periodic() {
-        telemetry.update();
+        super.periodic();
+        //telemetry.update();
     }
 }

@@ -13,6 +13,9 @@ import com.qualcomm.robotcore.hardware.Servo;
 
 import com.arcrobotics.ftclib.command.Command;
 import commands.RoadRunnerActionCommand;
+import subsystems.IntakeSubsystem;
+import subsystems.MecanumSubsystem;
+import subsystems.ShooterSubsystem;
 
 public abstract class BaseAuto extends CommandOpMode {
 
@@ -26,7 +29,7 @@ public abstract class BaseAuto extends CommandOpMode {
         
         // Initialize Drive with Pinpoint support (true)
         // If Pinpoint fails, it falls back to encoders automatically in MecanumSubsystem
-        drive = new MecanumSubsystem(hardwareMap, startPose, true);
+        drive = new MecanumSubsystem(hardwareMap, startPose, true, telemetry);
 
         // Initialize Shooter
         try {
