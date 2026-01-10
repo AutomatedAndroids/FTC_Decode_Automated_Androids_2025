@@ -19,7 +19,7 @@ import subsystems.IntakeSubsystem;
 import subsystems.MecanumSubsystem;
 import subsystems.ShooterSubsystem;
 
-@TeleOp
+@TeleOp(name = "Main TeleOp", group = "TeleOp")
 public class MainTeleOp extends CommandOpMode {
 
     private Limelight3A limelight; // Kept for future use, not used for align now
@@ -39,8 +39,8 @@ public class MainTeleOp extends CommandOpMode {
         limelight = hardwareMap.get(Limelight3A.class, "limelight");
         limelight.start();
 
-        // 1. Initialize Subsystems
-        drive = new MecanumSubsystem(hardwareMap, new Pose2d(0,0,0), true, telemetry);
+        // 1. Initialize Subsystems - disable Pinpoint for blind drive
+        drive = new MecanumSubsystem(hardwareMap, new Pose2d(0,0,0), false, telemetry);
         
         try {
             CRServo leftFeeder = new CRServo(hardwareMap, "leftFeeder");
@@ -68,29 +68,8 @@ public class MainTeleOp extends CommandOpMode {
         // 3. Default Drive
         drive.setDefaultCommand(new TeleOpDriveCommand(drive, driverOp));
 
-        // --- RESET POSE COMMAND ---
-        driverOp.getGamepadButton(GamepadKeys.Button.START)
-                .whenPressed(new InstantCommand(() -> drive.setPose(0, 0, 0)));
-
-
         // --- ALIGNMENT COMMANDS (Odometry Based) ---
         // Only active while button is held down
-
-        // BLUE SIDE (Left) - D-Pad
-        driverOp.getGamepadButton(GamepadKeys.Button.DPAD_UP)
-                .whileHeld(new OdoAlignCommand(drive, AutoConstants.BLUE_SCORE_FAR));
-                
-        driverOp.getGamepadButton(GamepadKeys.Button.DPAD_DOWN)
-                .whileHeld(new OdoAlignCommand(drive, AutoConstants.BLUE_SCORE_CLOSE));
-
-        // RED SIDE (Right) - Letters
-        driverOp.getGamepadButton(GamepadKeys.Button.Y)
-                .whileHeld(new OdoAlignCommand(drive, AutoConstants.RED_SCORE_FAR));
-
-        driverOp.getGamepadButton(GamepadKeys.Button.A)
-                .whileHeld(new OdoAlignCommand(drive, AutoConstants.RED_SCORE_CLOSE));
-
-
         // --- SHOOTER CONTROLS ---
         // Feeders (Triggers)
         if (shooter != null) {

@@ -104,6 +104,18 @@ public class MecanumDrive {
 
     public Pose2d pose;
     public final LinkedList<Pose2d> poseHistory = new LinkedList<>();
+    
+    // Track last motor powers for telemetry
+    private double lastLeftFrontPower = 0;
+    private double lastLeftBackPower = 0;
+    private double lastRightFrontPower = 0;
+    private double lastRightBackPower = 0;
+    
+    // Getters for telemetry
+    public double getLastLeftFrontPower() { return lastLeftFrontPower; }
+    public double getLastLeftBackPower() { return lastLeftBackPower; }
+    public double getLastRightFrontPower() { return lastRightFrontPower; }
+    public double getLastRightBackPower() { return lastRightBackPower; }
 
     private final DownsampledWriter estimatedPoseWriter = new DownsampledWriter("ESTIMATED_POSE", 50_000_000);
     private final DownsampledWriter targetPoseWriter = new DownsampledWriter("TARGET_POSE", 50_000_000);
@@ -151,26 +163,28 @@ public class MecanumDrive {
 
             int leftFrontPosDelta = leftFrontPosVel.position - lastLeftFrontPos;
             int leftBackPosDelta = leftBackPosVel.position - lastLeftBackPos;
-            int rightBackPosDelta = rightBackPosVel.position - lastRightBackPos;
-            int rightFrontPosDelta = rightFrontPosVel.position - lastRightFrontPos;
+            // Negate right side encoder readings because motors are reversed
+            // When motors are reversed, encoders still read in original direction
+            int rightBackPosDelta = -(rightBackPosVel.position - lastRightBackPos);
+            int rightFrontPosDelta = -(rightFrontPosVel.position - lastRightFrontPos);
 
             Twist2dDual<Time> twist = kinematics.forward(new MecanumKinematics.WheelIncrements<>(
                     new DualNum<Time>(new double[]{
                             (double) leftFrontPosDelta * PARAMS.inPerTick,
                             (double) leftFrontPosVel.velocity * PARAMS.inPerTick,
-                    }).times(PARAMS.inPerTick),
+                    }),
                     new DualNum<Time>(new double[]{
                             (double) leftBackPosDelta * PARAMS.inPerTick,
                             (double) leftBackPosVel.velocity * PARAMS.inPerTick,
-                    }).times(PARAMS.inPerTick),
+                    }),
                     new DualNum<Time>(new double[]{
                             (double) rightBackPosDelta * PARAMS.inPerTick,
-                            (double) rightBackPosVel.velocity * PARAMS.inPerTick,
-                    }).times(PARAMS.inPerTick),
+                            -(double) rightBackPosVel.velocity * PARAMS.inPerTick,
+                    }),
                     new DualNum<Time>(new double[]{
                             (double) rightFrontPosDelta * PARAMS.inPerTick,
-                            (double) rightFrontPosVel.velocity * PARAMS.inPerTick,
-                    }).times(PARAMS.inPerTick)
+                            -(double) rightFrontPosVel.velocity * PARAMS.inPerTick,
+                    })
             ));
 
             lastLeftFrontPos = leftFrontPosVel.position;
@@ -185,11 +199,6 @@ public class MecanumDrive {
     public MecanumDrive(HardwareMap hardwareMap, Pose2d pose) {
         this.pose = pose;
 
-        LynxFirmware.throwIfModulesAreOutdated(hardwareMap);
-
-        for (LynxModule module : hardwareMap.getAll(LynxModule.class)) {
-            module.setBulkCachingMode(LynxModule.BulkCachingMode.AUTO);
-        }
 
         // TODO: MAKE SURE THESE NAMES MATCH YOUR CONFIG ON THE ROBOT
         leftFront = hardwareMap.get(DcMotorEx.class, "fL");
@@ -211,29 +220,62 @@ public class MecanumDrive {
         localizer = new DriveLocalizer();
     }
 
+    // Simple blind drive - just raw motor power based on joystick input
+    // No encoder feedback, no pose estimation, just direct power
+    public void setDrivePowers(double forward, double strafe, double turn) {
+        // If all inputs are zero, stop all motors immediately
+        if (Math.abs(forward) < 0.01 && Math.abs(strafe) < 0.01 && Math.abs(turn) < 0.01) {
+            leftFront.setPower(0);
+            leftBack.setPower(0);
+            rightFront.setPower(0);
+            rightBack.setPower(0);
+            // Update tracked values for telemetry
+            lastLeftFrontPower = 0;
+            lastLeftBackPower = 0;
+            lastRightFrontPower = 0;
+            lastRightBackPower = 0;
+            return;
+        }
+        
+        // Mecanum drive calculations - adjusted for reversed right motors
+        // forward: positive = forward
+        // strafe: positive = left
+        // turn: positive = counterclockwise (left turn)
+        
+        // Standard mecanum wheel power calculations
+        // Right motors are already reversed in hardware, so math should work normally
+        double flPower = forward + strafe - turn;  // Front Left
+        double blPower = forward - strafe - turn;  // Back Left
+        double frPower = forward - strafe + turn;  // Front Right (will be reversed by hardware)
+        double brPower = forward + strafe + turn;  // Back Right (will be reversed by hardware)
+
+        // Normalize to prevent exceeding 1.0 power - only normalize if sum > 1.0
+        double maxPower = Math.max(Math.abs(flPower), Math.max(Math.abs(frPower), 
+                       Math.max(Math.abs(blPower), Math.abs(brPower))));
+        if (maxPower > 1.0) {
+            flPower /= maxPower;
+            frPower /= maxPower;
+            blPower /= maxPower;
+            brPower /= maxPower;
+        }
+        
+        // Set motor powers directly - NO encoder feedback, just pure joystick control
+        // Right motors are already reversed, so pass values as-is
+        leftFront.setPower(flPower);
+        leftBack.setPower(blPower);
+        rightFront.setPower(frPower);
+        rightBack.setPower(brPower);
+        
+        // Store for telemetry
+        lastLeftFrontPower = flPower;
+        lastLeftBackPower = blPower;
+        lastRightFrontPower = frPower;
+        lastRightBackPower = brPower;
+    }
+    
+    // Overload for PoseVelocity2d (kept for compatibility)
     public void setDrivePowers(PoseVelocity2d powers) {
-        // Direct Mecanum Math for "Stupid Drive"
-        // Avoids RoadRunner Kinematics complexity
-        
-        double y = powers.linearVel.x; // Forward
-        double x = powers.linearVel.y; // Strafe
-        double rx = powers.angVel;  // Turn
-
-        // Denominator ensures we don't exceed motor max while keeping ratios
-        double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
-
-        // Turn Left (positive rx) -> Left wheels reverse, Right wheels forward
-        double fl = (y + x - rx) / denominator;
-        double bl = (y - x - rx) / denominator; // Back Left
-        double fr = (y - x + rx) / denominator; // Front Right
-        double br = (y + x + rx) / denominator; // Back Right
-
-        // If you see it going wrong direction, FLIP the signs above or REVERSE motors below
-        
-        leftFront.setPower(fl);
-        leftBack.setPower(bl);
-        rightFront.setPower(fr);
-        rightBack.setPower(br);
+        setDrivePowers(powers.linearVel.x, -powers.linearVel.y, -powers.angVel);
     }
 
     public PoseVelocity2d updatePoseEstimate() {

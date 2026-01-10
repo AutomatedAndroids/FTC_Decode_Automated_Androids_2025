@@ -19,5 +19,9 @@ public class TeleOpDriveCommand extends CommandBase {
         // Standard Robot Centric Drive
         // Use gamepad.getLeftX() for Field Centric math if desired
         // INVERTED Y because Gamepad Y is negative up
-        drive.drive(gamepad.getLeftX(), -gamepad.getLeftY(), -gamepad.getRightX());
+        double strafe = gamepad.getLeftX();
+        double forward = -gamepad.getLeftY();
+        double turn = -gamepad.getRightX();
+        
+        drive.drive(strafe, forward, turn);
     }              }

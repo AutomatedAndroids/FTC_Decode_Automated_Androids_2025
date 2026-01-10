@@ -49,9 +49,17 @@ public class MecanumSubsystem extends SubsystemBase {
         distanceController = new PIDController(kP_dist, kI_dist, kD_dist);
     }
 
+    // Flag to enable/disable pose estimation updates (disable for blind drive)
+    private boolean enablePoseUpdates = false;
+
+    // Store last drive command values for telemetry
+    private double lastStrafe = 0;
+    private double lastForward = 0;
+    private double lastTurn = 0;
+
     @Override
     public void periodic() {
-        if (drive != null) {
+        if (drive != null && enablePoseUpdates) {
             drive.updatePoseEstimate();
         
             if (telemetry != null) {
@@ -83,10 +91,31 @@ public class MecanumSubsystem extends SubsystemBase {
                 }
             }
         }
+        
+        // Always show drive command telemetry for debugging
+        if (telemetry != null) {
+            telemetry.addData("=== DRIVE DEBUG ===", "");
+            telemetry.addData("Strafe Input", String.format("%.3f", lastStrafe));
+            telemetry.addData("Forward Input", String.format("%.3f", lastForward));
+            telemetry.addData("Turn Input", String.format("%.3f", lastTurn));
+            if (drive != null) {
+                telemetry.addData("FL Power", String.format("%.3f", drive.getLastLeftFrontPower()));
+                telemetry.addData("FR Power", String.format("%.3f", drive.getLastRightFrontPower()));
+                telemetry.addData("BL Power", String.format("%.3f", drive.getLastLeftBackPower()));
+                telemetry.addData("BR Power", String.format("%.3f", drive.getLastRightBackPower()));
+            }
+        }
     }
 
     public void drive(double strafe, double forward, double turn) {
-        drive.setDrivePowers(new PoseVelocity2d(new Vector2d(forward, -strafe), -turn));
+        // Store values for telemetry
+        lastStrafe = strafe;
+        lastForward = forward;
+        lastTurn = turn;
+        
+        // Direct blind drive - just pass joystick values straight to motors
+        // No pose estimation, no encoder feedback - simple and reliable
+        drive.setDrivePowers(forward, strafe, turn);
     }
 
 
