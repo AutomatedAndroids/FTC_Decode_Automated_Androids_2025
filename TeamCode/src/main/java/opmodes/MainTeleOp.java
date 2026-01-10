@@ -13,21 +13,19 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.Servo;
 
-import commands.AlignToGoalCommand;
+import commands.OdoAlignCommand;
 import commands.TeleOpDriveCommand;
 import subsystems.IntakeSubsystem;
 import subsystems.MecanumSubsystem;
 import subsystems.ShooterSubsystem;
-import util.ShootingPresets;
 
 @TeleOp
 public class MainTeleOp extends CommandOpMode {
 
-    private Limelight3A limelight;
+    private Limelight3A limelight; // Kept for future use, not used for align now
     private MecanumSubsystem drive;
     private ShooterSubsystem shooter;
     private IntakeSubsystem intake;
-
 
     @Override
     public void run() {
@@ -70,50 +68,30 @@ public class MainTeleOp extends CommandOpMode {
         // 3. Default Drive
         drive.setDefaultCommand(new TeleOpDriveCommand(drive, driverOp));
 
-        // --- DEFINE THE 6 MODES ---
-
-        // GOAL 1 COMMANDS (Default Goal)
-        AlignToGoalCommand goal1_Close = new AlignToGoalCommand(drive, limelight, driverOp, telemetry,
-                ShootingPresets.DIST_CLOSE, ShootingPresets.GOAL_1_HEIGHT, ShootingPresets.GOAL_1_PIPELINE);
-
-        AlignToGoalCommand goal1_Mid = new AlignToGoalCommand(drive, limelight, driverOp, telemetry,
-                ShootingPresets.DIST_MID, ShootingPresets.GOAL_1_HEIGHT, ShootingPresets.GOAL_1_PIPELINE);
-
-        AlignToGoalCommand goal1_Far = new AlignToGoalCommand(drive, limelight, driverOp, telemetry,
-                ShootingPresets.DIST_FAR, ShootingPresets.GOAL_1_HEIGHT, ShootingPresets.GOAL_1_PIPELINE);
-
-        // GOAL 2 COMMANDS (Alternative Goal)
-        AlignToGoalCommand goal2_Close = new AlignToGoalCommand(drive, limelight, driverOp, telemetry,
-                ShootingPresets.DIST_CLOSE, ShootingPresets.GOAL_2_HEIGHT, ShootingPresets.GOAL_2_PIPELINE);
-
-        AlignToGoalCommand goal2_Mid = new AlignToGoalCommand(drive, limelight, driverOp, telemetry,
-                ShootingPresets.DIST_MID, ShootingPresets.GOAL_2_HEIGHT, ShootingPresets.GOAL_2_PIPELINE);
-
-        AlignToGoalCommand goal2_Far = new AlignToGoalCommand(drive, limelight, driverOp, telemetry,
-                ShootingPresets.DIST_FAR, ShootingPresets.GOAL_2_HEIGHT, ShootingPresets.GOAL_2_PIPELINE);
+        // --- RESET POSE COMMAND ---
+        driverOp.getGamepadButton(GamepadKeys.Button.START)
+                .whenPressed(new InstantCommand(() -> drive.setPose(0, 0, 0)));
 
 
-        // --- DRIVER CONTROLS ---
-        
-        // Aligners (A, B, X) + LB Modifier
+        // --- ALIGNMENT COMMANDS (Odometry Based) ---
+        // Only active while button is held down
+
+        // BLUE SIDE (Left) - D-Pad
+        driverOp.getGamepadButton(GamepadKeys.Button.DPAD_UP)
+                .whileHeld(new OdoAlignCommand(drive, AutoConstants.BLUE_SCORE_FAR));
+                
+        driverOp.getGamepadButton(GamepadKeys.Button.DPAD_DOWN)
+                .whileHeld(new OdoAlignCommand(drive, AutoConstants.BLUE_SCORE_CLOSE));
+
+        // RED SIDE (Right) - Letters
+        driverOp.getGamepadButton(GamepadKeys.Button.Y)
+                .whileHeld(new OdoAlignCommand(drive, AutoConstants.RED_SCORE_FAR));
+
         driverOp.getGamepadButton(GamepadKeys.Button.A)
-                .whenPressed(() -> {
-                    if (driverOp.getButton(GamepadKeys.Button.LEFT_BUMPER)) schedule(goal2_Close);
-                    else schedule(goal1_Close);
-                });
+                .whileHeld(new OdoAlignCommand(drive, AutoConstants.RED_SCORE_CLOSE));
 
-        driverOp.getGamepadButton(GamepadKeys.Button.B)
-                .whenPressed(() -> {
-                    if (driverOp.getButton(GamepadKeys.Button.LEFT_BUMPER)) schedule(goal2_Mid);
-                    else schedule(goal1_Mid);
-                });
 
-        driverOp.getGamepadButton(GamepadKeys.Button.X)
-                .whenPressed(() -> {
-                    if (driverOp.getButton(GamepadKeys.Button.LEFT_BUMPER)) schedule(goal2_Far);
-                    else schedule(goal1_Far);
-                });
-
+        // --- SHOOTER CONTROLS ---
         // Feeders (Triggers)
         if (shooter != null) {
             new Trigger(() -> driverOp.getTrigger(GamepadKeys.Trigger.LEFT_TRIGGER) > 0)
@@ -138,7 +116,6 @@ public class MainTeleOp extends CommandOpMode {
 
         // Sort Arm (Bumpers)
         if (intake != null) {
-            telemetry.addData("the command got initialized", 0);
             operatorOp.getGamepadButton(GamepadKeys.Button.LEFT_BUMPER)
                     .whenPressed(new InstantCommand(() -> intake.sort(false))); // Left
 
@@ -149,9 +126,6 @@ public class MainTeleOp extends CommandOpMode {
             new Trigger(() -> operatorOp.getTrigger(GamepadKeys.Trigger.RIGHT_TRIGGER) > 0.1)
                     .whileActiveContinuous(new InstantCommand(intake::turnOnIntake))
                     .whenInactive(new InstantCommand(intake::turnOffIntake));
-        }
-        else {
-            telemetry.addData("intake is null??????", 0);
         }
     }
 }

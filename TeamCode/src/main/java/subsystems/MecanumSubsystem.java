@@ -91,6 +91,24 @@ public class MecanumSubsystem extends SubsystemBase {
         ));
     }
 
+    public boolean driveToPosition(double xTicks, double yTicks, double headingRad) {
+        return drive.driveToPosition(xTicks, yTicks, headingRad);
+    }
+
+    public void driveToPositionStupid(com.qualcomm.robotcore.eventloop.opmode.LinearOpMode opMode, Pose2d target) {
+        drive.driveToPositionStupid(opMode, target);
+    }
+
+    public Pose2d getPose() {
+        return drive.pose;
+    }
+    
+    public void setPose(double xTicks, double yTicks, double headingDeg) {
+        double xInches = xTicks / MecanumDrive.TICKS_PER_INCH;
+        double yInches = yTicks / MecanumDrive.TICKS_PER_INCH;
+        drive.pose = new Pose2d(xInches, yInches, Math.toRadians(headingDeg));
+    }
+
     // --- THIS METHOD FIXED ---
     // Changed return type from 'ActionBuilder' to 'TrajectoryActionBuilder'
     public TrajectoryActionBuilder actionBuilder(Pose2d pose) {

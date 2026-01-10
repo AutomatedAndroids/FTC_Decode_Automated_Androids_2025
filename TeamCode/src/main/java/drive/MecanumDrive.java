@@ -22,12 +22,11 @@ import com.acmerobotics.roadrunner.TrajectoryActionBuilder;
 import com.acmerobotics.roadrunner.TurnConstraints;
 import com.acmerobotics.roadrunner.Twist2dDual;
 import com.acmerobotics.roadrunner.Vector2d;
-import com.acmerobotics.roadrunner.Vector2dDual; // FIXED IMPORT
+import com.acmerobotics.roadrunner.Vector2dDual;
 import com.acmerobotics.roadrunner.Pose2dDual;
 import com.acmerobotics.roadrunner.TrajectoryBuilderParams;
 import com.acmerobotics.roadrunner.ProfileParams;
 import com.acmerobotics.roadrunner.VelConstraint;
-import util.LazyImu;
 import com.acmerobotics.roadrunner.ftc.Encoder;
 import com.acmerobotics.dashboard.canvas.Canvas;
 import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
@@ -40,15 +39,12 @@ import org.firstinspires.ftc.teamcode.messages.PoseMessage;
 
 import com.acmerobotics.roadrunner.ftc.LynxFirmware;
 import com.acmerobotics.roadrunner.ftc.OverflowEncoder;
-import com.acmerobotics.roadrunner.ftc.PositionVelocityPair;
 import com.acmerobotics.roadrunner.ftc.RawEncoder;
 import com.qualcomm.hardware.lynx.LynxModule;
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
 
 import java.util.Arrays;
@@ -58,13 +54,6 @@ import java.util.List;
 @Config
 public class MecanumDrive {
     public static class Params {
-        // IMU Orientation
-        // TODO: EDIT THESE TO MATCH YOUR ROBOT (Logo/USB direction)
-        public RevHubOrientationOnRobot.LogoFacingDirection logoFacingDirection =
-                RevHubOrientationOnRobot.LogoFacingDirection.UP;
-        public RevHubOrientationOnRobot.UsbFacingDirection usbFacingDirection =
-                RevHubOrientationOnRobot.UsbFacingDirection.LEFT;
-
         // Drive Constants
         public double inPerTick = 1;
         public double lateralInPerTick = 1;
@@ -111,8 +100,6 @@ public class MecanumDrive {
 
     public final VoltageSensor voltageSensor;
 
-    public final LazyImu lazyImu;
-
     public final Localizer localizer;
 
     public Pose2d pose;
@@ -130,24 +117,68 @@ public class MecanumDrive {
 
     public class DriveLocalizer implements Localizer {
         public final Encoder leftFront, leftBack, rightBack, rightFront;
-        public final IMU imu;
+
+        private int lastLeftFrontPos, lastLeftBackPos, lastRightBackPos, lastRightFrontPos;
+        private boolean initialized;
 
         public DriveLocalizer() {
             leftFront = new OverflowEncoder(new RawEncoder(MecanumDrive.this.leftFront));
             leftBack = new OverflowEncoder(new RawEncoder(MecanumDrive.this.leftBack));
             rightBack = new OverflowEncoder(new RawEncoder(MecanumDrive.this.rightBack));
             rightFront = new OverflowEncoder(new RawEncoder(MecanumDrive.this.rightFront));
-
-            imu = lazyImu != null ? lazyImu.get() : null;
         }
 
         @Override
         public Twist2dDual<Time> update() {
-            // Basic drive encoder logic (Ignored by PinpointDrive, but required to compile)
-            return new Twist2dDual<>(
-                    Vector2dDual.constant(new Vector2d(0, 0), 2),
-                    DualNum.constant(0.0, 2)
-            );
+            com.acmerobotics.roadrunner.ftc.PositionVelocityPair leftFrontPosVel = leftFront.getPositionAndVelocity();
+            com.acmerobotics.roadrunner.ftc.PositionVelocityPair leftBackPosVel = leftBack.getPositionAndVelocity();
+            com.acmerobotics.roadrunner.ftc.PositionVelocityPair rightBackPosVel = rightBack.getPositionAndVelocity();
+            com.acmerobotics.roadrunner.ftc.PositionVelocityPair rightFrontPosVel = rightFront.getPositionAndVelocity();
+
+            if (!initialized) {
+                initialized = true;
+
+                lastLeftFrontPos = leftFrontPosVel.position;
+                lastLeftBackPos = leftBackPosVel.position;
+                lastRightBackPos = rightBackPosVel.position;
+                lastRightFrontPos = rightFrontPosVel.position;
+
+                return new Twist2dDual<>(
+                        Vector2dDual.constant(new Vector2d(0.0, 0.0), 2),
+                        DualNum.constant(0.0, 2)
+                );
+            }
+
+            int leftFrontPosDelta = leftFrontPosVel.position - lastLeftFrontPos;
+            int leftBackPosDelta = leftBackPosVel.position - lastLeftBackPos;
+            int rightBackPosDelta = rightBackPosVel.position - lastRightBackPos;
+            int rightFrontPosDelta = rightFrontPosVel.position - lastRightFrontPos;
+
+            Twist2dDual<Time> twist = kinematics.forward(new MecanumKinematics.WheelIncrements<>(
+                    new DualNum<Time>(new double[]{
+                            (double) leftFrontPosDelta * PARAMS.inPerTick,
+                            (double) leftFrontPosVel.velocity * PARAMS.inPerTick,
+                    }).times(PARAMS.inPerTick),
+                    new DualNum<Time>(new double[]{
+                            (double) leftBackPosDelta * PARAMS.inPerTick,
+                            (double) leftBackPosVel.velocity * PARAMS.inPerTick,
+                    }).times(PARAMS.inPerTick),
+                    new DualNum<Time>(new double[]{
+                            (double) rightBackPosDelta * PARAMS.inPerTick,
+                            (double) rightBackPosVel.velocity * PARAMS.inPerTick,
+                    }).times(PARAMS.inPerTick),
+                    new DualNum<Time>(new double[]{
+                            (double) rightFrontPosDelta * PARAMS.inPerTick,
+                            (double) rightFrontPosVel.velocity * PARAMS.inPerTick,
+                    }).times(PARAMS.inPerTick)
+            ));
+
+            lastLeftFrontPos = leftFrontPosVel.position;
+            lastLeftBackPos = leftBackPosVel.position;
+            lastRightBackPos = rightBackPosVel.position;
+            lastRightFrontPos = rightFrontPosVel.position;
+
+            return twist;
         }
     }
 
@@ -175,39 +206,34 @@ public class MecanumDrive {
         rightBack.setDirection(DcMotorSimple.Direction.REVERSE);
         rightFront.setDirection(DcMotorSimple.Direction.REVERSE);
 
-        LazyImu tmpImu = null;
-        try {
-            tmpImu = new LazyImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
-                    PARAMS.logoFacingDirection, PARAMS.usbFacingDirection));
-        } catch (Exception e) {
-            // IMU not found or failed to initialize (e.g. using Pinpoint)
-        }
-        lazyImu = tmpImu;
-
         voltageSensor = hardwareMap.voltageSensor.iterator().next();
 
-        if (lazyImu != null) {
-            localizer = new DriveLocalizer();
-        } else {
-            // Fallback if IMU fails - this likely means we need another localizer (Pinpoint)
-            // We set localizer to null here, but subclasses (PinpointDrive) should override updatePoseEstimate
-            localizer = new DriveLocalizer(); // Attempt to init anyway to avoid NPEs if logic depends on it
-        }
+        localizer = new DriveLocalizer();
     }
 
     public void setDrivePowers(PoseVelocity2d powers) {
-        MecanumKinematics.WheelVelocities<Time> wheelVels = new MecanumKinematics(1).inverse(
-                PoseVelocity2dDual.constant(powers, 1));
+        // Direct Mecanum Math for "Stupid Drive"
+        // Avoids RoadRunner Kinematics complexity
+        
+        double y = powers.linearVel.x; // Forward
+        double x = powers.linearVel.y; // Strafe
+        double rx = powers.angVel;  // Turn
 
-        double maxPowerMag = 1;
-        for (DualNum<Time> power : wheelVels.all()) {
-            maxPowerMag = Math.max(maxPowerMag, power.value());
-        }
+        // Denominator ensures we don't exceed motor max while keeping ratios
+        double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
 
-        leftFront.setPower(wheelVels.leftFront.get(0) / maxPowerMag);
-        leftBack.setPower(wheelVels.leftBack.get(0) / maxPowerMag);
-        rightBack.setPower(wheelVels.rightBack.get(0) / maxPowerMag);
-        rightFront.setPower(wheelVels.rightFront.get(0) / maxPowerMag);
+        // Turn Left (positive rx) -> Left wheels reverse, Right wheels forward
+        double fl = (y + x - rx) / denominator;
+        double bl = (y - x - rx) / denominator; // Back Left
+        double fr = (y - x + rx) / denominator; // Front Right
+        double br = (y + x + rx) / denominator; // Back Right
+
+        // If you see it going wrong direction, FLIP the signs above or REVERSE motors below
+        
+        leftFront.setPower(fl);
+        leftBack.setPower(bl);
+        rightFront.setPower(fr);
+        rightBack.setPower(br);
     }
 
     public PoseVelocity2d updatePoseEstimate() {
@@ -424,7 +450,6 @@ public class MecanumDrive {
         }
     }
 
-    // ACTION BUILDERS FOR AUTO - FIXED FOR RR 1.0 STABLE
     public TrajectoryActionBuilder actionBuilder(Pose2d beginPose) {
         return new TrajectoryActionBuilder(
                 TurnAction::new,
@@ -439,5 +464,126 @@ public class MecanumDrive {
                 defaultTurnConstraints,
                 defaultVelConstraint, defaultAccelConstraint
         );
+    }
+
+    // --- NEW PID POSITION CONTROL ---
+
+    // --- STUPID DRIVE IMPLEMENTATION ---
+
+    public static double TICKS_PER_INCH = 505.31; // Approximate for GoBilda Pinpoint (19.89 ticks/mm)
+
+    public static double DRIVE_SPEED = 0.5;
+    public static double CORRECTION_SPEED = 0.2;
+    public static double TOLERANCE = 1.0; // inches
+
+    /**
+     * Non-blocking simple drive for compatibility.
+     * Uses Stupid Drive logic but returns immediately (single step).
+     */
+    public boolean driveToPosition(double targetXTicks, double targetYTicks, double targetHeadingRad) {
+         double targetX = targetXTicks / TICKS_PER_INCH;
+         double targetY = targetYTicks / TICKS_PER_INCH;
+         
+         double dist = Math.hypot(targetX - pose.position.x, targetY - pose.position.y);
+         
+         // Heading check
+         double hError = targetHeadingRad - pose.heading.toDouble();
+         while (hError > Math.PI) hError -= 2 * Math.PI;
+         while (hError <= -Math.PI) hError += 2 * Math.PI;
+         
+         if (dist < TOLERANCE && Math.abs(hError) < 0.1) {
+             setDrivePowers(new PoseVelocity2d(new Vector2d(0,0), 0));
+             return true;
+         }
+         
+         moveTo(new Pose2d(targetX, targetY, targetHeadingRad), DRIVE_SPEED);
+         return false;
+    }
+
+    /**
+     * Blocking "Stupid" Drive: Run until encoder reads right thing, then 3 corrections.
+     */
+    public void driveToPositionStupid(com.qualcomm.robotcore.eventloop.opmode.LinearOpMode opMode, Pose2d target) {
+        // 1. Run until encoder reads right thing (distance < tolerance)
+        while (opMode.opModeIsActive() && getDistance(target) > TOLERANCE) {
+            updatePoseEstimate();
+            moveTo(target, DRIVE_SPEED);
+            
+            opMode.telemetry.addData("Target", "%.1f, %.1f", target.position.x, target.position.y);
+            opMode.telemetry.addData("Current", "%.1f, %.1f", pose.position.x, pose.position.y);
+            opMode.telemetry.addData("Dist", "%.2f", getDistance(target));
+            opMode.telemetry.update();
+        }
+        setDrivePowers(new PoseVelocity2d(new Vector2d(0,0), 0));
+        
+        // 2. Make 3 low power corrections
+        for (int i = 0; i < 3; i++) {
+             if (!opMode.opModeIsActive()) return;
+             
+             // Sleep 200ms (simulate stop/check)
+             long sleepStart = System.currentTimeMillis();
+             while (System.currentTimeMillis() - sleepStart < 200 && opMode.opModeIsActive()) {
+                 updatePoseEstimate();
+             }
+             
+             // Correction logic
+             double dist = getDistance(target);
+             if (dist > 0.2) { // Tight tolerance for correction
+                 long correctionStart = System.currentTimeMillis();
+                 // Timeout 1.5s to prevent getting stuck
+                 while (opMode.opModeIsActive() && getDistance(target) > 0.2 && System.currentTimeMillis() - correctionStart < 1500) {
+                      updatePoseEstimate();
+                      moveTo(target, CORRECTION_SPEED);
+                      opMode.telemetry.addData("Correction", i+1);
+                      opMode.telemetry.addData("Dist", "%.2f", getDistance(target));
+                      opMode.telemetry.update();
+                 }
+                 setDrivePowers(new PoseVelocity2d(new Vector2d(0,0), 0));
+             }
+        }
+    }
+
+    private double getDistance(Pose2d target) {
+        return Math.hypot(target.position.x - pose.position.x, target.position.y - pose.position.y);
+    }
+    
+    private void moveTo(Pose2d target, double speed) {
+        double dx = target.position.x - pose.position.x;
+        double dy = target.position.y - pose.position.y;
+        
+        // Robot Centric Conversion
+        double botHeading = pose.heading.toDouble();
+        double rotX = dx * Math.cos(-botHeading) - dy * Math.sin(-botHeading);
+        double rotY = dx * Math.sin(-botHeading) + dy * Math.cos(-botHeading);
+        
+        // Normalize vector to speed
+        double mag = Math.hypot(rotX, rotY);
+        double xPower = 0;
+        double yPower = 0;
+        if (mag > 0.001) {
+             xPower = (rotX / mag) * speed;
+             yPower = (rotY / mag) * speed;
+        }
+        
+        // Heading Control (Simple P)
+        double hError = target.heading.toDouble() - botHeading;
+        while (hError > Math.PI) hError -= 2 * Math.PI;
+        while (hError <= -Math.PI) hError += 2 * Math.PI;
+        
+        // If heading error is significant (> 10 degrees), ignore translation
+        // This prevents the robot from moving left/right/forward/back while changing heading
+        if (Math.abs(hError) > Math.toRadians(10)) {
+             xPower = 0;
+             yPower = 0;
+        }
+
+        // Simple P for heading
+        double hPower = hError * 1.0; 
+        
+        // Clamp hPower to speed (or independent?)
+        // Let's clamp total power or just hPower
+        if (Math.abs(hPower) > speed) hPower = Math.signum(hPower) * speed;
+
+        setDrivePowers(new PoseVelocity2d(new Vector2d(xPower, yPower), hPower));
     }
 }
