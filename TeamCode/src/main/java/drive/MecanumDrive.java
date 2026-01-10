@@ -468,21 +468,177 @@ public class MecanumDrive {
 
     // --- NEW PID POSITION CONTROL ---
 
-    // --- STUPID DRIVE IMPLEMENTATION ---
+    // --- TIME-BASED PROFILE DRIVE IMPLEMENTATION ---
 
     public static double TICKS_PER_INCH = 505.31; // Approximate for GoBilda Pinpoint (19.89 ticks/mm)
 
     public static double DRIVE_SPEED = 0.5;
     public static double CORRECTION_SPEED = 0.2;
     public static double TOLERANCE = 1.0; // inches
+    
+    // Motion profile constraints
+    public static double MAX_LINEAR_VEL = 20.0; // inches per second
+    public static double MAX_LINEAR_ACCEL = 30.0; // inches per second^2
+    public static double MAX_ANG_VEL = Math.PI; // radians per second
+    public static double MAX_ANG_ACCEL = Math.PI * 2; // radians per second^2
+
+    // Profile state tracking
+    private static class MotionProfile {
+        double distance;
+        double maxVel;
+        double maxAccel;
+        double duration;
+        double accelTime;
+        double cruiseTime;
+        boolean triangular; // true if we never reach maxVel
+        
+        MotionProfile(double dist, double maxV, double maxA) {
+            distance = Math.abs(dist);
+            maxVel = maxV;
+            maxAccel = maxA;
+            
+            if (distance < 1e-6) {
+                // Zero distance
+                triangular = true;
+                accelTime = 0;
+                cruiseTime = 0;
+                duration = 0;
+                return;
+            }
+            
+            // Calculate time to reach max velocity
+            double timeToMaxVel = maxVel / maxAccel;
+            // Distance to reach max velocity
+            double distToMaxVel = 0.5 * maxAccel * timeToMaxVel * timeToMaxVel;
+            
+            if (distToMaxVel * 2 >= distance) {
+                // Triangular profile - never reach maxVel
+                triangular = true;
+                accelTime = Math.sqrt(distance / maxAccel);
+                cruiseTime = 0;
+                duration = accelTime * 2;
+            } else {
+                // Trapezoidal profile
+                triangular = false;
+                accelTime = timeToMaxVel;
+                double cruiseDist = distance - (distToMaxVel * 2);
+                cruiseTime = cruiseDist / maxVel;
+                duration = accelTime * 2 + cruiseTime;
+            }
+        }
+        
+        // Get target velocity at time t
+        double getVelocity(double t) {
+            if (t < 0) return 0;
+            if (t >= duration) return 0;
+            
+            if (triangular) {
+                if (t < accelTime) {
+                    return maxAccel * t;
+                } else {
+                    return maxAccel * (duration - t);
+                }
+            } else {
+                if (t < accelTime) {
+                    return maxAccel * t;
+                } else if (t < accelTime + cruiseTime) {
+                    return maxVel;
+                } else {
+                    return maxAccel * (duration - t);
+                }
+            }
+        }
+        
+        // Get target position at time t
+        double getPosition(double t) {
+            if (t < 0) return 0;
+            if (t >= duration) return distance;
+            
+            if (triangular) {
+                if (t < accelTime) {
+                    return 0.5 * maxAccel * t * t;
+                } else {
+                    double decelStartPos = 0.5 * maxAccel * accelTime * accelTime;
+                    double decelTime = t - accelTime;
+                    double decelVel = maxAccel * accelTime;
+                    return decelStartPos + decelVel * decelTime - 0.5 * maxAccel * decelTime * decelTime;
+                }
+            } else {
+                if (t < accelTime) {
+                    return 0.5 * maxAccel * t * t;
+                } else if (t < accelTime + cruiseTime) {
+                    double accelDist = 0.5 * maxAccel * accelTime * accelTime;
+                    return accelDist + maxVel * (t - accelTime);
+                } else {
+                    double accelDist = 0.5 * maxAccel * accelTime * accelTime;
+                    double cruiseDist = maxVel * cruiseTime;
+                    double decelTime = t - (accelTime + cruiseTime);
+                    double decelVel = maxVel;
+                    return accelDist + cruiseDist + decelVel * decelTime - 0.5 * maxAccel * decelTime * decelTime;
+                }
+            }
+        }
+    }
+
+    // Profile execution state
+    private MotionProfile linearProfile = null;
+    private MotionProfile angularProfile = null;
+    private long profileStartTimeNs = -1;
+    private Pose2d profileStartPose = null;
+    private Pose2d profileTargetPose = null;
+    private double profileStartHeading = 0;
+    private boolean profileActive = false;
+    
+    // Sequential phase tracking
+    public enum Phase {
+        TURNING_TO_BEARING,    // Turning to face target position
+        DRIVING_TO_POSITION,   // Driving forward to position
+        TURNING_TO_FINAL       // Adjusting final heading
+    }
+    private Phase currentPhase = Phase.TURNING_TO_BEARING;
+    private static final double HEADING_TOLERANCE = Math.toRadians(5); // When heading is "close enough" to start driving
+    
+    // Public getters for telemetry
+    public Phase getCurrentPhase() {
+        return currentPhase;
+    }
+    
+    public Pose2d getTargetPose() {
+        return profileTargetPose;
+    }
+    
+    public boolean isProfileActive() {
+        return profileActive;
+    }
+    
+    public double getDistanceToTarget() {
+        if (profileTargetPose == null) return 0;
+        return Math.hypot(profileTargetPose.position.x - pose.position.x, 
+                         profileTargetPose.position.y - pose.position.y);
+    }
+    
+    public double getHeadingErrorToTarget() {
+        if (profileTargetPose == null) return 0;
+        double dx = profileTargetPose.position.x - pose.position.x;
+        double dy = profileTargetPose.position.y - pose.position.y;
+        if (Math.hypot(dx, dy) < 1e-6) return 0;
+        double absBearing = Math.atan2(dy, dx);
+        double headingError = absBearing - pose.heading.toDouble();
+        while (headingError > Math.PI) headingError -= 2 * Math.PI;
+        while (headingError <= -Math.PI) headingError += 2 * Math.PI;
+        return headingError;
+    }
 
     /**
-     * Non-blocking simple drive for compatibility.
-     * Uses Stupid Drive logic but returns immediately (single step).
+     * Non-blocking drive for compatibility.
+     * Uses time-based motion profiles and returns true when complete.
      */
     public boolean driveToPosition(double targetXTicks, double targetYTicks, double targetHeadingRad) {
+         updatePoseEstimate();
+         
          double targetX = targetXTicks / TICKS_PER_INCH;
          double targetY = targetYTicks / TICKS_PER_INCH;
+         Pose2d target = new Pose2d(targetX, targetY, targetHeadingRad);
          
          double dist = Math.hypot(targetX - pose.position.x, targetY - pose.position.y);
          
@@ -491,99 +647,170 @@ public class MecanumDrive {
          while (hError > Math.PI) hError -= 2 * Math.PI;
          while (hError <= -Math.PI) hError += 2 * Math.PI;
          
-         if (dist < TOLERANCE && Math.abs(hError) < 0.1) {
+         if (dist < TOLERANCE && Math.abs(hError) < Math.toRadians(5)) {
              setDrivePowers(new PoseVelocity2d(new Vector2d(0,0), 0));
+             profileActive = false;
+             linearProfile = null;
+             angularProfile = null;
              return true;
          }
          
-         moveTo(new Pose2d(targetX, targetY, targetHeadingRad), DRIVE_SPEED);
+         moveTo(target, DRIVE_SPEED);
          return false;
-    }
-
-    /**
-     * Blocking "Stupid" Drive: Run until encoder reads right thing, then 3 corrections.
-     */
-    public void driveToPositionStupid(com.qualcomm.robotcore.eventloop.opmode.LinearOpMode opMode, Pose2d target) {
-        // 1. Run until encoder reads right thing (distance < tolerance)
-        while (opMode.opModeIsActive() && getDistance(target) > TOLERANCE) {
-            updatePoseEstimate();
-            moveTo(target, DRIVE_SPEED);
-            
-            opMode.telemetry.addData("Target", "%.1f, %.1f", target.position.x, target.position.y);
-            opMode.telemetry.addData("Current", "%.1f, %.1f", pose.position.x, pose.position.y);
-            opMode.telemetry.addData("Dist", "%.2f", getDistance(target));
-            opMode.telemetry.update();
-        }
-        setDrivePowers(new PoseVelocity2d(new Vector2d(0,0), 0));
-        
-        // 2. Make 3 low power corrections
-        for (int i = 0; i < 3; i++) {
-             if (!opMode.opModeIsActive()) return;
-             
-             // Sleep 200ms (simulate stop/check)
-             long sleepStart = System.currentTimeMillis();
-             while (System.currentTimeMillis() - sleepStart < 200 && opMode.opModeIsActive()) {
-                 updatePoseEstimate();
-             }
-             
-             // Correction logic
-             double dist = getDistance(target);
-             if (dist > 0.2) { // Tight tolerance for correction
-                 long correctionStart = System.currentTimeMillis();
-                 // Timeout 1.5s to prevent getting stuck
-                 while (opMode.opModeIsActive() && getDistance(target) > 0.2 && System.currentTimeMillis() - correctionStart < 1500) {
-                      updatePoseEstimate();
-                      moveTo(target, CORRECTION_SPEED);
-                      opMode.telemetry.addData("Correction", i+1);
-                      opMode.telemetry.addData("Dist", "%.2f", getDistance(target));
-                      opMode.telemetry.update();
-                 }
-                 setDrivePowers(new PoseVelocity2d(new Vector2d(0,0), 0));
-             }
-        }
-    }
-
-    private double getDistance(Pose2d target) {
-        return Math.hypot(target.position.x - pose.position.x, target.position.y - pose.position.y);
     }
     
     private void moveTo(Pose2d target, double speed) {
+        long currentTimeNs = System.nanoTime();
+        
+        // Calculate distance and heading errors
         double dx = target.position.x - pose.position.x;
         double dy = target.position.y - pose.position.y;
+        double dist = Math.hypot(dx, dy);
         
-        // Robot Centric Conversion
-        double botHeading = pose.heading.toDouble();
-        double rotX = dx * Math.cos(-botHeading) - dy * Math.sin(-botHeading);
-        double rotY = dx * Math.sin(-botHeading) + dy * Math.cos(-botHeading);
+        double absBearing = Math.atan2(dy, dx);
+        double headingError = absBearing - pose.heading.toDouble();
+        while (headingError > Math.PI) headingError -= 2 * Math.PI;
+        while (headingError <= -Math.PI) headingError += 2 * Math.PI;
         
-        // Normalize vector to speed
-        double mag = Math.hypot(rotX, rotY);
-        double xPower = 0;
-        double yPower = 0;
-        if (mag > 0.001) {
-             xPower = (rotX / mag) * speed;
-             yPower = (rotY / mag) * speed;
+        double finalHeadingError = target.heading.toDouble() - pose.heading.toDouble();
+        while (finalHeadingError > Math.PI) finalHeadingError -= 2 * Math.PI;
+        while (finalHeadingError <= -Math.PI) finalHeadingError += 2 * Math.PI;
+        
+        // Check if we've arrived
+        if (dist < TOLERANCE && Math.abs(finalHeadingError) < Math.toRadians(5)) {
+            setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), 0));
+            profileActive = false;
+            linearProfile = null;
+            angularProfile = null;
+            currentPhase = Phase.TURNING_TO_BEARING; // Reset for next movement
+            return;
         }
         
-        // Heading Control (Simple P)
-        double hError = target.heading.toDouble() - botHeading;
-        while (hError > Math.PI) hError -= 2 * Math.PI;
-        while (hError <= -Math.PI) hError += 2 * Math.PI;
-        
-        // If heading error is significant (> 10 degrees), ignore translation
-        // This prevents the robot from moving left/right/forward/back while changing heading
-        if (Math.abs(hError) > Math.toRadians(10)) {
-             xPower = 0;
-             yPower = 0;
+        // Determine current phase based on state
+        Phase desiredPhase;
+        if (dist < TOLERANCE) {
+            // At position, only adjust final heading
+            desiredPhase = Phase.TURNING_TO_FINAL;
+        } else if (Math.abs(headingError) > HEADING_TOLERANCE) {
+            // Not aligned, need to turn first
+            desiredPhase = Phase.TURNING_TO_BEARING;
+        } else {
+            // Aligned and not at position, drive forward
+            desiredPhase = Phase.DRIVING_TO_POSITION;
         }
-
-        // Simple P for heading
-        double hPower = hError * 1.0; 
         
-        // Clamp hPower to speed (or independent?)
-        // Let's clamp total power or just hPower
-        if (Math.abs(hPower) > speed) hPower = Math.signum(hPower) * speed;
+        // If phase changed, reset profile
+        if (desiredPhase != currentPhase) {
+            profileActive = false;
+            linearProfile = null;
+            angularProfile = null;
+            currentPhase = desiredPhase;
+        }
+        
+        // Re-plan if needed
+        boolean needReplan = false;
+        if (!profileActive || linearProfile == null || angularProfile == null) {
+            needReplan = true;
+        } else if (profileTargetPose == null || 
+                   Math.hypot(target.position.x - profileTargetPose.position.x, 
+                             target.position.y - profileTargetPose.position.y) > TOLERANCE * 2 ||
+                   Math.abs(target.heading.toDouble() - profileTargetPose.heading.toDouble()) > Math.toRadians(10)) {
+            needReplan = true;
+        } else {
+            double elapsed = (currentTimeNs - profileStartTimeNs) / 1e9;
+            double activeProfileDuration = 0;
+            if (currentPhase == Phase.TURNING_TO_BEARING || currentPhase == Phase.TURNING_TO_FINAL) {
+                activeProfileDuration = angularProfile != null ? angularProfile.duration : 0;
+            } else if (currentPhase == Phase.DRIVING_TO_POSITION) {
+                activeProfileDuration = linearProfile != null ? linearProfile.duration : 0;
+            }
+            if (elapsed > activeProfileDuration + 0.5) {
+                // Profile expired, re-plan
+                needReplan = true;
+            }
+        }
+        
+        if (needReplan) {
+            // Create new profiles based on current phase
+            profileStartPose = pose;
+            profileTargetPose = target;
+            profileStartTimeNs = currentTimeNs;
+            profileStartHeading = pose.heading.toDouble();
+            profileActive = true;
+            
+            double angularMaxVel = MAX_ANG_VEL * speed;
+            double angularMaxAccel = MAX_ANG_ACCEL * speed;
+            double linearMaxVel = MAX_LINEAR_VEL * speed;
+            double linearMaxAccel = MAX_LINEAR_ACCEL * speed;
+            
+            if (currentPhase == Phase.TURNING_TO_BEARING) {
+                // Plan only angular motion
+                double angularDist = Math.abs(headingError);
+                angularProfile = new MotionProfile(angularDist, angularMaxVel, angularMaxAccel);
+                linearProfile = null; // No linear movement during turning
+            } else if (currentPhase == Phase.DRIVING_TO_POSITION) {
+                // Plan only linear motion
+                linearProfile = new MotionProfile(dist, linearMaxVel, linearMaxAccel);
+                angularProfile = null; // No angular movement during driving
+            } else if (currentPhase == Phase.TURNING_TO_FINAL) {
+                // Plan only angular motion for final heading
+                double angularDist = Math.abs(finalHeadingError);
+                angularProfile = new MotionProfile(angularDist, angularMaxVel, angularMaxAccel);
+                linearProfile = null; // No linear movement during final turn
+            }
+        }
+        
+        // Execute profile based on current phase
+        double elapsed = profileStartTimeNs >= 0 ? (currentTimeNs - profileStartTimeNs) / 1e9 : 0;
+        
+        if (currentPhase == Phase.TURNING_TO_BEARING) {
+            // Turn only - no linear movement
+            double angularSign = (headingError > 0) ? 1 : -1;
+            double targetAngularVel = angularProfile.getVelocity(elapsed) * angularSign;
+            double turnPower = targetAngularVel / MAX_ANG_VEL;
+            turnPower = Math.max(-1, Math.min(1, turnPower));
+            setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), turnPower));
+            
+        } else if (currentPhase == Phase.DRIVING_TO_POSITION) {
+            // Drive toward target - no turning, but can strafe if needed
+            double profileVel = linearProfile.getVelocity(elapsed);
+            
+            // Convert absolute bearing to robot-relative forward/strafe components
+            // Since we're in driving phase, heading should be roughly aligned
+            double relativeBearing = absBearing - pose.heading.toDouble();
+            
+            // Forward/backward component (along robot's forward direction)
+            double forwardVel = profileVel * Math.cos(relativeBearing);
+            // Strafe component (along robot's left/right direction)
+            double strafeVel = profileVel * Math.sin(relativeBearing);
+            
+            // Convert to drive powers (normalize by max velocity)
+            double forwardPower = forwardVel / MAX_LINEAR_VEL;
+            double strafePower = strafeVel / MAX_LINEAR_VEL;
+            
+            // Clamp to [-1, 1]
+            forwardPower = Math.max(-1, Math.min(1, forwardPower));
+            strafePower = Math.max(-1, Math.min(1, strafePower));
+            
+            // Drive with forward/strafe but NO turning (turnPower = 0)
+            setDrivePowers(new PoseVelocity2d(new Vector2d(forwardPower, strafePower), 0));
+            
+        } else if (currentPhase == Phase.TURNING_TO_FINAL) {
+            // Turn to final heading only - no linear movement
+            double angularSign = (finalHeadingError > 0) ? 1 : -1;
+            double targetAngularVel = angularProfile.getVelocity(elapsed) * angularSign;
+            double turnPower = targetAngularVel / MAX_ANG_VEL;
+            turnPower = Math.max(-1, Math.min(1, turnPower));
+            setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), turnPower));
+        }
+    }
 
-        setDrivePowers(new PoseVelocity2d(new Vector2d(xPower, yPower), hPower));
+    public void driveToPositionStupid(com.qualcomm.robotcore.eventloop.opmode.LinearOpMode opMode, Pose2d target) {
+        while (opMode.opModeIsActive()) {
+            updatePoseEstimate();
+            if (driveToPosition(target.position.x * TICKS_PER_INCH, target.position.y * TICKS_PER_INCH, target.heading.toDouble())) {
+                break;
+            }
+        }
     }
 }

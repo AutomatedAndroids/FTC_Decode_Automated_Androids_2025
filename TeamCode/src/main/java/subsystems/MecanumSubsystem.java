@@ -59,6 +59,19 @@ public class MecanumSubsystem extends SubsystemBase {
                 telemetry.addData("Robot Pose Y", drive.pose.position.y);
                 telemetry.addData("Robot Heading", Math.toDegrees(drive.pose.heading.toDouble()));
 
+                // Display target and movement information
+                if (drive.isProfileActive()) {
+                    Pose2d targetPose = drive.getTargetPose();
+                    if (targetPose != null) {
+                        telemetry.addData("Target X", targetPose.position.x);
+                        telemetry.addData("Target Y", targetPose.position.y);
+                        telemetry.addData("Target Heading", Math.toDegrees(targetPose.heading.toDouble()));
+                        telemetry.addData("Distance to Target", drive.getDistanceToTarget());
+                        telemetry.addData("Heading Error", Math.toDegrees(drive.getHeadingErrorToTarget()));
+                    }
+                    telemetry.addData("Current Phase", drive.getCurrentPhase().toString());
+                }
+
                 if (drive instanceof PinpointDrive) {
                     PinpointDrive ppDrive = (PinpointDrive) drive;
                     if (ppDrive.pinpoint != null) {
@@ -76,28 +89,11 @@ public class MecanumSubsystem extends SubsystemBase {
         drive.setDrivePowers(new PoseVelocity2d(new Vector2d(forward, -strafe), -turn));
     }
 
-    public void driveToGoal(double strafe, double forward, double turn, double currentDist, double targetDist, double headingError) {
-        double turnOutput = alignController.calculate(headingError, 0);
-        
-        // NOTE: Standard PID is calculate(measurement, setpoint).
-        // Here we use calculate(setpoint, measurement) -> (target - current).
-        // If Current > Target (Too Far), Output is Positive.
-        // We assume Positive Forward Power moves the robot closer to the target.
-        double forwardOutput = distanceController.calculate(targetDist, currentDist);
-
-        drive.setDrivePowers(new PoseVelocity2d(
-                new Vector2d(forwardOutput + forward, -strafe),
-                turnOutput - turn
-        ));
-    }
 
     public boolean driveToPosition(double xTicks, double yTicks, double headingRad) {
         return drive.driveToPosition(xTicks, yTicks, headingRad);
     }
 
-    public void driveToPositionStupid(com.qualcomm.robotcore.eventloop.opmode.LinearOpMode opMode, Pose2d target) {
-        drive.driveToPositionStupid(opMode, target);
-    }
 
     public Pose2d getPose() {
         return drive.pose;
@@ -111,7 +107,5 @@ public class MecanumSubsystem extends SubsystemBase {
 
     // --- THIS METHOD FIXED ---
     // Changed return type from 'ActionBuilder' to 'TrajectoryActionBuilder'
-    public TrajectoryActionBuilder actionBuilder(Pose2d pose) {
-        return drive.actionBuilder(pose);
-    }
+
 }

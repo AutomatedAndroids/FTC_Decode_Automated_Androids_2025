@@ -21,20 +21,6 @@ public class SimpleMoveCommand extends CommandBase {
     }
 
     @Override
-    public void initialize() {
-        // Blocking call happens here or execute?
-        // In Command-based, initialize should be quick.
-        // But since we want to block until done (for sequential groups), 
-        // and we are using a custom blocking method, we can do it in initialize 
-        // if we accept that the loop will pause here.
-        // However, CommandOpMode calls run() on scheduler in loop.
-        // If we block initialize, the scheduler is blocked.
-        // This is effectively what the user asked for: "Run until encoder reads right thing".
-        
-        drive.driveToPositionStupid(opMode, target);
-    }
-
-    @Override
     public boolean isFinished() {
         return true; // Since the move is blocking in initialize, we are done immediately after it returns.
     }

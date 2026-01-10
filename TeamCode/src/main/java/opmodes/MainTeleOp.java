@@ -127,5 +127,20 @@ public class MainTeleOp extends CommandOpMode {
                     .whileActiveContinuous(new InstantCommand(intake::turnOnIntake))
                     .whenInactive(new InstantCommand(intake::turnOffIntake));
         }
+
+        if(shooter != null) {
+            operatorOp.getGamepadButton(GamepadKeys.Button.DPAD_UP)
+                    .whenPressed(new InstantCommand(() -> shooter.increaseShootFar()));
+            operatorOp.getGamepadButton(GamepadKeys.Button.DPAD_DOWN)
+                    .whenPressed(new InstantCommand(() -> shooter.decreaseShootFar()));
+            operatorOp.getGamepadButton(GamepadKeys.Button.Y)
+                    .whenPressed(new InstantCommand(() -> shooter.increaseShootClose()));
+            operatorOp.getGamepadButton(GamepadKeys.Button.A)
+                    .whenPressed(new InstantCommand(() -> shooter.decreaseShootClose()));
+        }
+
+        telemetry.addData("Shooter Far", shooter.getShootFar());
+        telemetry.addData("Shooter Close", shooter.getShootClose());
+        telemetry.update();
     }
 }

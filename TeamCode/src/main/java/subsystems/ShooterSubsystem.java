@@ -12,7 +12,8 @@ public class ShooterSubsystem extends SubsystemBase{
     private CRServo leftFeeder, rightFeeder;
     private MotorEx shooterMotor;
     private Telemetry telemetry;
-
+    private double shootClose = 0.5;
+    private double shootFar = 0.6;
     // --- CONFIGURATION ---
     // Change this based on your exact motor! (28 is standard for 1:1 Rev/GoBilda)
     private static final double TICKS_PER_REV = 28.0;
@@ -57,11 +58,11 @@ public class ShooterSubsystem extends SubsystemBase{
         // 2. Set the power. This acts as the maximum power the PID controller
         // is allowed to use to reach and maintain the target velocity.
         // Set it to 1.0 to give the controller full authority.
-        shooterMotor.set(0.65);
+        shooterMotor.set(shootFar);
     }
 
     public void shoot_close() {
-        shooterMotor.set(0.55);
+        shooterMotor.set(shootClose);
     }
 
     public void feedLeft() {
@@ -74,7 +75,7 @@ public class ShooterSubsystem extends SubsystemBase{
 
     public void feed() {
 
-        leftFeeder.set(1);
+        leftFeeder.set(-1);
         rightFeeder.set(1);
     }
 
@@ -97,6 +98,31 @@ public class ShooterSubsystem extends SubsystemBase{
     public void stopFlywheels() {
         shooterMotor.set(0);
         // Ensures velocity is cleared
+    }
+
+    public void increaseShootClose(){
+        shootClose += 0.01;
+    }
+
+    public void decreaseShootClose(){
+        shootClose -= 0.01;
+    }
+
+    public void increaseShootFar(){
+        shootFar += 0.01;
+    }
+
+    public void decreaseShootFar(){
+        shootFar -= 0.01;
+    }
+
+
+    public double getShootClose(){
+        return shootClose;
+    }
+
+    public double getShootFar() {
+        return shootFar;
     }
 
     @Override
