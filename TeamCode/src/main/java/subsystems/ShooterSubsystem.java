@@ -4,6 +4,7 @@ import com.arcrobotics.ftclib.command.SubsystemBase;
 import com.arcrobotics.ftclib.hardware.motors.CRServo;
 import com.arcrobotics.ftclib.hardware.motors.Motor;
 import com.arcrobotics.ftclib.hardware.motors.MotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 
@@ -19,10 +20,9 @@ public class ShooterSubsystem extends SubsystemBase{
     private static final double TICKS_PER_REV = 28.0;
 
     // The RPM you want to reach
-    private static final double TARGET_RPM = 1;
+    private static final double TARGET_RPM_CLOSE = 2750;
+    private static final double TARGET_RPM_FAR = 3000;
 
-    // Calculate Ticks Per Second: (RPM / 60) * TicksPerRev
-    private static final double TARGET_VELOCITY = (TARGET_RPM / 60.0) * TICKS_PER_REV;
 
     public ShooterSubsystem(CRServo leftFeeder, CRServo rightFeeder, MotorEx shooterMotor, Telemetry telemetry) {
         this.leftFeeder = leftFeeder;
@@ -30,17 +30,19 @@ public class ShooterSubsystem extends SubsystemBase{
         this.shooterMotor = shooterMotor;
         this.telemetry = telemetry;
 
+        leftFeeder.setInverted(true);
 
-        shooterMotor.setRunMode(Motor.RunMode.RawPower);
+        shooterMotor.setRunMode(Motor.RunMode.VelocityControl);
 
 
-//        // Configure Motor for Velocity Control
-//
-//        // Zero Power Behavior (Float is usually better for high-speed flywheels)
+        // Configure Motor for Velocity Control
+
+        // Zero Power Behavior (Float is usually better for high-speed flywheels)
 //        this.shooter.setRunMode(Motor.RunMode.VelocityControl);
-//        this.shooter.setZeroPowerBehavior(Motor.ZeroPowerBehavior.FLOAT);
-//        // Note: If the motor vibrates or doesn't reach speed, you may need to tune PIDF.
-//        this.shooter.setVeloCoefficients(0.05, 0, 0); Example tuning if needed
+        this.shooterMotor.setZeroPowerBehavior(Motor.ZeroPowerBehavior.FLOAT);
+        // Note: If the motor vibrates or doesn't reach speed, you may need to tune PIDF.
+        this.shooterMotor.setVeloCoefficients(0.05, 0, 0);
+
     }
 
     public void shoot_far() {
@@ -53,20 +55,20 @@ public class ShooterSubsystem extends SubsystemBase{
         // 1. Set the desired speed. The motor's internal PID controller
         // will now try to hit this velocity.
         // --- FIX IS HERE ---
-//        shooter.setVelocity(TARGET_VELOCITY);
+        shooterMotor.setVelocity((TARGET_RPM_FAR / 60.0) * TICKS_PER_REV);
 
         // 2. Set the power. This acts as the maximum power the PID controller
         // is allowed to use to reach and maintain the target velocity.
         // Set it to 1.0 to give the controller full authority.
-        shooterMotor.set(shootFar);
+//        shooterMotor.set(shootFar);
     }
 
     public void shoot_close() {
-        shooterMotor.set(shootClose);
+        shooterMotor.setVelocity((TARGET_RPM_CLOSE / 60.0) * TICKS_PER_REV);
     }
 
     public void feedLeft() {
-        leftFeeder.set(-1);
+        leftFeeder.set(1);
     }
 
     public void feedRight() {
@@ -75,28 +77,28 @@ public class ShooterSubsystem extends SubsystemBase{
 
     public void feed() {
 
-        leftFeeder.set(-1);
+        leftFeeder.set(1);
         rightFeeder.set(1);
     }
 
     public void stopLeft() {
-        leftFeeder.set(0);
+        leftFeeder.set(-0.001);
         // Ensures velocity is cleared
     }
 
     public void stopRight() {
-        rightFeeder.set(0);
+        rightFeeder.set(-0.001);
         // Ensures velocity is cleared
     }
 
     public void stopFeeding() {
-        leftFeeder.set(0);
-        rightFeeder.set(0);
+        leftFeeder.set(-0.001);
+        rightFeeder.set(-0.001);
         // Ensures velocity is cleared
     }
 
     public void stopFlywheels() {
-        shooterMotor.set(0);
+        shooterMotor.setVelocity(0);
         // Ensures velocity is cleared
     }
 
@@ -125,8 +127,28 @@ public class ShooterSubsystem extends SubsystemBase{
         return shootFar;
     }
 
+    /**
+     * Gets the current RPM of the shooter motor based on encoder velocity
+     * @return RPM of the shooter motor, or 0 if motor is not available
+     */
+    public double getShooterRPM() {
+        if (shooterMotor == null || shooterMotor.motorEx == null) {
+            return 0.0;
+        }
+        // Access the underlying DcMotorEx to get velocity in encoder ticks per second
+        DcMotorEx motor = shooterMotor.motorEx;
+        double velocityTicksPerSecond = motor.getVelocity();
+        // Convert to RPM: (ticks/sec) / (ticks/rev) * (60 sec/min) = RPM
+        return (velocityTicksPerSecond / TICKS_PER_REV) * 60.0;
+    }
+
     @Override
     public void periodic() {
         super.periodic();
+        if (telemetry != null) {
+            telemetry.addData("Shooter Far", shootFar);
+            telemetry.addData("Shooter Close", shootClose);
+            telemetry.addData("Shooter RPM", String.format("%.2f", getShooterRPM()));
+        }
     }
 }

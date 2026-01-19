@@ -49,8 +49,8 @@ public class MecanumSubsystem extends SubsystemBase {
         distanceController = new PIDController(kP_dist, kI_dist, kD_dist);
     }
 
-    // Flag to enable/disable pose estimation updates (disable for blind drive)
-    private boolean enablePoseUpdates = false;
+    // Flag to enable/disable pose estimation updates (default true for accurate localization)
+    private boolean enablePoseUpdates = true;
 
     // Store last drive command values for telemetry
     private double lastStrafe = 0;
@@ -59,23 +59,29 @@ public class MecanumSubsystem extends SubsystemBase {
 
     @Override
     public void periodic() {
-        if (drive != null && enablePoseUpdates) {
-            drive.updatePoseEstimate();
+        if (drive != null) {
+            // Always update pose estimate for accurate localization
+            if (enablePoseUpdates) {
+                drive.updatePoseEstimate();
+            }
         
+            // Always show position telemetry
             if (telemetry != null) {
-                telemetry.addData("Robot Pose X", drive.pose.position.x);
-                telemetry.addData("Robot Pose Y", drive.pose.position.y);
-                telemetry.addData("Robot Heading", Math.toDegrees(drive.pose.heading.toDouble()));
+                telemetry.addData("=== ROBOT POSITION ===", "");
+                telemetry.addData("X (in)", String.format("%.2f", drive.pose.position.x));
+                telemetry.addData("Y (in)", String.format("%.2f", drive.pose.position.y));
+                telemetry.addData("Heading (deg)", String.format("%.2f", Math.toDegrees(drive.pose.heading.toDouble())));
 
                 // Display target and movement information
                 if (drive.isProfileActive()) {
+                    telemetry.addData("=== MOVING TO TARGET ===", "");
                     Pose2d targetPose = drive.getTargetPose();
                     if (targetPose != null) {
-                        telemetry.addData("Target X", targetPose.position.x);
-                        telemetry.addData("Target Y", targetPose.position.y);
-                        telemetry.addData("Target Heading", Math.toDegrees(targetPose.heading.toDouble()));
-                        telemetry.addData("Distance to Target", drive.getDistanceToTarget());
-                        telemetry.addData("Heading Error", Math.toDegrees(drive.getHeadingErrorToTarget()));
+                        telemetry.addData("Target X (in)", String.format("%.2f", targetPose.position.x));
+                        telemetry.addData("Target Y (in)", String.format("%.2f", targetPose.position.y));
+                        telemetry.addData("Target Heading (deg)", String.format("%.2f", Math.toDegrees(targetPose.heading.toDouble())));
+                        telemetry.addData("Distance to Target (in)", String.format("%.2f", drive.getDistanceToTarget()));
+                        telemetry.addData("Heading Error (deg)", String.format("%.2f", Math.toDegrees(drive.getHeadingErrorToTarget())));
                     }
                     telemetry.addData("Current Phase", drive.getCurrentPhase().toString());
                 }
@@ -83,16 +89,19 @@ public class MecanumSubsystem extends SubsystemBase {
                 if (drive instanceof PinpointDrive) {
                     PinpointDrive ppDrive = (PinpointDrive) drive;
                     if (ppDrive.pinpoint != null) {
+                        telemetry.addData("=== PINPOINT ODOMETRY ===", "");
                         Pose2D pos = ppDrive.pinpoint.getPosition();
-                        telemetry.addData("Pinpoint X (in)", pos.getX(DistanceUnit.INCH));
-                        telemetry.addData("Pinpoint Y (in)", pos.getY(DistanceUnit.INCH));
-                        telemetry.addData("Pinpoint Heading (deg)", pos.getHeading(AngleUnit.DEGREES));
+                        telemetry.addData("Pinpoint X (in)", String.format("%.2f", pos.getX(DistanceUnit.INCH)));
+                        telemetry.addData("Pinpoint Y (in)", String.format("%.2f", pos.getY(DistanceUnit.INCH)));
+                        telemetry.addData("Pinpoint Heading (deg)", String.format("%.2f", pos.getHeading(AngleUnit.DEGREES)));
                     }
                 }
             }
         }
         
-        // Always show drive command telemetry for debugging
+        // Drive command telemetry disabled to avoid overriding shooter telemetry
+        // Uncomment below if needed for debugging
+        /*
         if (telemetry != null) {
             telemetry.addData("=== DRIVE DEBUG ===", "");
             telemetry.addData("Strafe Input", String.format("%.3f", lastStrafe));
@@ -105,6 +114,7 @@ public class MecanumSubsystem extends SubsystemBase {
                 telemetry.addData("BR Power", String.format("%.3f", drive.getLastRightBackPower()));
             }
         }
+        */
     }
 
     public void drive(double strafe, double forward, double turn) {
