@@ -69,19 +69,19 @@ public class MecanumDrive {
                 RevHubOrientationOnRobot.UsbFacingDirection.LEFT;
 
         // Drive Constants
-        public double inPerTick = 1;
-        public double lateralInPerTick = 1;
-        public double trackWidthTicks = 0;
+        public double inPerTick = 0.00198035743;
+        public double lateralInPerTick = inPerTick;
+        public double trackWidthTicks = 7452.251645;
 
         // Feedforward
-        public double kS = 0;
-        public double kV = 0;
-        public double kA = 0;
+        public double kS = 1.148356722;
+        public double kV = 0.0003466915161;
+        public double kA = 1e-4;
 
         // Path Following Gains
-        public double axialGain = 0.0;
-        public double lateralGain = 0.0;
-        public double headingGain = 0.0;
+        public double axialGain = 5.0;
+        public double lateralGain = 5.0;
+        public double headingGain = 5.0;
 
         public double axialVelGain = 0.0;
         public double lateralVelGain = 0.0;

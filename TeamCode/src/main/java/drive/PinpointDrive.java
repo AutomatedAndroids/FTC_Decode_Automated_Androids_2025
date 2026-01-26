@@ -14,8 +14,8 @@ import org.firstinspires.ftc.teamcode.messages.PoseMessage;
 public class PinpointDrive extends MecanumDrive {
     public static class Params {
         public String pinpointDeviceName = "odo"; // TODO: CHECK CONFIG NAME
-        public double xOffset = -3.3071; // TODO: MEASURE (Forward is positive)
-        public double yOffset = -6.6142; // TODO: MEASURE (Left is positive)
+        public double xOffset = -3.5; // TODO: MEASURE (Forward is positive)
+        public double yOffset = 0; // TODO: MEASURE (Left is positive)
 
         // 19.89... for 4-Bar Pods, 13.26... for Swingarm
         public double encoderResolution = 19.89436789;
