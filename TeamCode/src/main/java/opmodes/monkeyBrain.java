@@ -125,7 +125,7 @@ public class monkeyBrain extends LinearOpMode {
         rightBack.setPower(0.45);
         rightFront.setPower(0.45);
 
-        sleep(800);
+        sleep(450);
 
         rightBack.setPower(0);
         rightFront.setPower(0);
@@ -147,20 +147,24 @@ public class monkeyBrain extends LinearOpMode {
         shooter.stopFeeding();
         shooter.stopFlywheels();
 
+        leftBack.setPower(0.5);
+        leftFront.setPower(0.5);
+
+        sleep(500);
 
         leftBack.setPower(0.5);
         leftFront.setPower(0.5);
         rightBack.setPower(-0.5);
         rightFront.setPower(-0.5);
 
-        sleep(800);
+        sleep(400);
 
         leftBack.setPower(0.3);
         leftFront.setPower(0.3);
         rightBack.setPower(0.3);
         rightFront.setPower(0.3);
 
-        sleep(2000);
+        sleep(2750);
 
         leftBack.setPower(0);
         leftFront.setPower(0);

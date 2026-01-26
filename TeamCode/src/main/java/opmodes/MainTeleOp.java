@@ -88,7 +88,10 @@ public class MainTeleOp extends CommandOpMode {
         if (shooter != null) {
             operatorOp.getGamepadButton(GamepadKeys.Button.A)
                     .whenPressed(new InstantCommand(shooter::shoot_close));
-            
+
+            new Trigger(() -> operatorOp.getTrigger(GamepadKeys.Trigger.RIGHT_TRIGGER) > 0)
+                    .whileActiveOnce(new InstantCommand(shooter::shoot_far));
+
             operatorOp.getGamepadButton(GamepadKeys.Button.B)
                     .whenPressed(new InstantCommand(shooter::stopFlywheels));
         }
@@ -102,7 +105,7 @@ public class MainTeleOp extends CommandOpMode {
                     .whenPressed(new InstantCommand(() -> intake.sort(true))); // Right
             
             // Optional: Intake Motor Control for Operator (Triggers)
-            new Trigger(() -> operatorOp.getTrigger(GamepadKeys.Trigger.RIGHT_TRIGGER) > 0.1)
+            new Trigger(() -> operatorOp.getTrigger(GamepadKeys.Trigger.LEFT_TRIGGER) > 0.1)
                     .whileActiveContinuous(new InstantCommand(intake::turnOnIntake))
                     .whenInactive(new InstantCommand(intake::turnOffIntake));
         }
@@ -112,14 +115,10 @@ public class MainTeleOp extends CommandOpMode {
                     .whenPressed(new InstantCommand(() -> shooter.increaseShootFar()));
             operatorOp.getGamepadButton(GamepadKeys.Button.DPAD_DOWN)
                     .whenPressed(new InstantCommand(() -> shooter.decreaseShootFar()));
-            operatorOp.getGamepadButton(GamepadKeys.Button.Y)
+            operatorOp.getGamepadButton(GamepadKeys.Button.DPAD_RIGHT)
                     .whenPressed(new InstantCommand(() -> shooter.increaseShootClose()));
-            operatorOp.getGamepadButton(GamepadKeys.Button.A)
+            operatorOp.getGamepadButton(GamepadKeys.Button.DPAD_LEFT)
                     .whenPressed(new InstantCommand(() -> shooter.decreaseShootClose()));
         }
-
-        telemetry.addData("Shooter Far", shooter.getShootFar());
-        telemetry.addData("Shooter Close", shooter.getShootClose());
-        telemetry.update();
     }
 }

@@ -36,6 +36,12 @@ import org.firstinspires.ftc.teamcode.Drawing;
 import org.firstinspires.ftc.teamcode.messages.DriveCommandMessage;
 import org.firstinspires.ftc.teamcode.messages.MecanumCommandMessage;
 import org.firstinspires.ftc.teamcode.messages.PoseMessage;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.hardware.IMU;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.AngularVelocity;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import com.acmerobotics.roadrunner.Rotation2d;
 
 import com.acmerobotics.roadrunner.ftc.LynxFirmware;
 import com.acmerobotics.roadrunner.ftc.OverflowEncoder;
@@ -54,6 +60,14 @@ import java.util.List;
 @Config
 public class MecanumDrive {
     public static class Params {
+        // IMU orientation
+        // TODO: fill in these values based on your robot's IMU mounting
+        //   see https://ftc-docs.firstinspires.org/en/latest/programming_resources/imu/imu.html?highlight=imu#physical-hub-mounting
+        public RevHubOrientationOnRobot.LogoFacingDirection logoFacingDirection =
+                RevHubOrientationOnRobot.LogoFacingDirection.UP;
+        public RevHubOrientationOnRobot.UsbFacingDirection usbFacingDirection =
+                RevHubOrientationOnRobot.UsbFacingDirection.LEFT;
+
         // Drive Constants
         public double inPerTick = 1;
         public double lateralInPerTick = 1;
@@ -100,6 +114,8 @@ public class MecanumDrive {
 
     public final VoltageSensor voltageSensor;
 
+    public final IMU imu;
+
     public final Localizer localizer;
 
     public Pose2d pose;
@@ -129,8 +145,10 @@ public class MecanumDrive {
 
     public class DriveLocalizer implements Localizer {
         public final Encoder leftFront, leftBack, rightBack, rightFront;
+        public final IMU imu;
 
         private int lastLeftFrontPos, lastLeftBackPos, lastRightBackPos, lastRightFrontPos;
+        private Rotation2d lastHeading;
         private boolean initialized;
 
         public DriveLocalizer() {
@@ -138,6 +156,8 @@ public class MecanumDrive {
             leftBack = new OverflowEncoder(new RawEncoder(MecanumDrive.this.leftBack));
             rightBack = new OverflowEncoder(new RawEncoder(MecanumDrive.this.rightBack));
             rightFront = new OverflowEncoder(new RawEncoder(MecanumDrive.this.rightFront));
+
+            imu = MecanumDrive.this.imu;
         }
 
         @Override
@@ -147,6 +167,14 @@ public class MecanumDrive {
             com.acmerobotics.roadrunner.ftc.PositionVelocityPair rightBackPosVel = rightBack.getPositionAndVelocity();
             com.acmerobotics.roadrunner.ftc.PositionVelocityPair rightFrontPosVel = rightFront.getPositionAndVelocity();
 
+            // Get heading and angular velocity from IMU
+            YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
+            Rotation2d heading = Rotation2d.exp(angles.getYaw(AngleUnit.RADIANS));
+            
+            // Get angular velocity from IMU (in degrees, convert to radians)
+            AngularVelocity angularVelocityDegrees = imu.getRobotAngularVelocity(AngleUnit.DEGREES);
+            double angularVelocityRad = Math.toRadians(angularVelocityDegrees.zRotationRate);
+
             if (!initialized) {
                 initialized = true;
 
@@ -154,6 +182,7 @@ public class MecanumDrive {
                 lastLeftBackPos = leftBackPosVel.position;
                 lastRightBackPos = rightBackPosVel.position;
                 lastRightFrontPos = rightFrontPosVel.position;
+                lastHeading = heading;
 
                 return new Twist2dDual<>(
                         Vector2dDual.constant(new Vector2d(0.0, 0.0), 2),
@@ -168,7 +197,8 @@ public class MecanumDrive {
             int rightBackPosDelta = -(rightBackPosVel.position - lastRightBackPos);
             int rightFrontPosDelta = -(rightFrontPosVel.position - lastRightFrontPos);
 
-            Twist2dDual<Time> twist = kinematics.forward(new MecanumKinematics.WheelIncrements<>(
+            // Calculate position change from encoders (x, y)
+            Twist2dDual<Time> encoderTwist = kinematics.forward(new MecanumKinematics.WheelIncrements<>(
                     new DualNum<Time>(new double[]{
                             (double) leftFrontPosDelta * PARAMS.inPerTick,
                             (double) leftFrontPosVel.velocity * PARAMS.inPerTick,
@@ -187,10 +217,24 @@ public class MecanumDrive {
                     })
             ));
 
+            // Calculate heading change from IMU
+            double headingDelta = heading.minus(lastHeading);
+
+            // Combine encoder-based position with IMU-based heading
+            // Use encoder twist for x/y position, but replace angular component with IMU heading
+            Twist2dDual<Time> twist = new Twist2dDual<>(
+                    encoderTwist.line,  // Position from encoders
+                    new DualNum<Time>(new double[]{
+                            headingDelta,      // Heading delta from IMU (position)
+                            angularVelocityRad // Angular velocity from IMU (velocity)
+                    })
+            );
+
             lastLeftFrontPos = leftFrontPosVel.position;
             lastLeftBackPos = leftBackPosVel.position;
             lastRightBackPos = rightBackPosVel.position;
             lastRightFrontPos = rightFrontPosVel.position;
+            lastHeading = heading;
 
             return twist;
         }
@@ -216,6 +260,13 @@ public class MecanumDrive {
         rightFront.setDirection(DcMotorSimple.Direction.REVERSE);
 
         voltageSensor = hardwareMap.voltageSensor.iterator().next();
+
+        // Initialize IMU directly from hardwareMap
+        // TODO: make sure your config has an IMU with this name (can be BNO or BHI)
+        //   see https://ftc-docs.firstinspires.org/en/latest/hardware_and_software_configuration/configuring/index.html
+        imu = hardwareMap.get(IMU.class, "imu");
+        imu.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(
+                PARAMS.logoFacingDirection, PARAMS.usbFacingDirection)));
 
         localizer = new DriveLocalizer();
     }
@@ -250,8 +301,7 @@ public class MecanumDrive {
         double brPower = forward + strafe + turn;  // Back Right (will be reversed by hardware)
 
         // Normalize to prevent exceeding 1.0 power - only normalize if sum > 1.0
-        double maxPower = Math.max(Math.abs(flPower), Math.max(Math.abs(frPower), 
-                       Math.max(Math.abs(blPower), Math.abs(brPower))));
+        double maxPower = 0.95;
         if (maxPower > 1.0) {
             flPower /= maxPower;
             frPower /= maxPower;
@@ -671,34 +721,149 @@ public class MecanumDrive {
         return headingError;
     }
 
+    // RoadRunner trajectory-based drive to position
+    private TimeTrajectory currentTrajectory = null;
+    private TimeTurn currentTurn = null;
+    private double trajectoryStartTime = -1;
+    private enum DriveState { IDLE, DRIVING, TURNING }
+    private DriveState driveState = DriveState.IDLE;
+    private Pose2d driveTarget = null;
+    
     /**
-     * Non-blocking drive for compatibility.
-     * Uses time-based motion profiles and returns true when complete.
+     * Drive to position using RoadRunner's trajectory system (much better!).
+     * Returns true when complete. This uses proper motion profiles and path following.
      */
     public boolean driveToPosition(double targetXTicks, double targetYTicks, double targetHeadingRad) {
-         updatePoseEstimate();
-         
-         double targetX = targetXTicks / TICKS_PER_INCH;
-         double targetY = targetYTicks / TICKS_PER_INCH;
-         Pose2d target = new Pose2d(targetX, targetY, targetHeadingRad);
-         
-         double dist = Math.hypot(targetX - pose.position.x, targetY - pose.position.y);
-         
-         // Heading check
-         double hError = targetHeadingRad - pose.heading.toDouble();
-         while (hError > Math.PI) hError -= 2 * Math.PI;
-         while (hError <= -Math.PI) hError += 2 * Math.PI;
-         
-         if (dist < TOLERANCE && Math.abs(hError) < Math.toRadians(5)) {
-             setDrivePowers(new PoseVelocity2d(new Vector2d(0,0), 0));
-             profileActive = false;
-             linearProfile = null;
-             angularProfile = null;
-             return true;
-         }
-         
-         moveTo(target, DRIVE_SPEED);
-         return false;
+        updatePoseEstimate();
+        
+        double targetX = targetXTicks / TICKS_PER_INCH;
+        double targetY = targetYTicks / TICKS_PER_INCH;
+        Pose2d target = new Pose2d(targetX, targetY, targetHeadingRad);
+        
+        // Check if we've reached the target
+        double dist = Math.hypot(targetX - pose.position.x, targetY - pose.position.y);
+        double hError = targetHeadingRad - pose.heading.toDouble();
+        while (hError > Math.PI) hError -= 2 * Math.PI;
+        while (hError <= -Math.PI) hError += 2 * Math.PI;
+        
+        if (dist < TOLERANCE && Math.abs(hError) < Math.toRadians(5)) {
+            // We're there! Stop and reset
+            setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), 0));
+            currentTrajectory = null;
+            currentTurn = null;
+            driveState = DriveState.IDLE;
+            driveTarget = null;
+            return true;
+        }
+        
+        // If target changed or we're idle, plan a new trajectory
+        if (driveTarget == null || 
+            Math.hypot(target.position.x - driveTarget.position.x, 
+                      target.position.y - driveTarget.position.y) > 0.5 ||
+            Math.abs(target.heading.toDouble() - driveTarget.heading.toDouble()) > Math.toRadians(10) ||
+            driveState == DriveState.IDLE) {
+            
+            driveTarget = target;
+            
+            // Plan trajectory: first drive to position, then turn to heading
+            if (dist > TOLERANCE) {
+                // Build trajectory to target position using splineTo
+                // Use current heading for the spline, we'll turn to final heading after
+                Action trajectoryAction = actionBuilder(pose)
+                        .splineTo(new Vector2d(targetX, targetY), pose.heading.toDouble())
+                        .build();
+                // Extract the TimeTrajectory from the TrajectoryAction
+                if (trajectoryAction instanceof TrajectoryAction) {
+                    currentTrajectory = ((TrajectoryAction) trajectoryAction).timeTrajectory;
+                } else {
+                    // Fallback: if it's not a TrajectoryAction, we can't use it
+                    // This shouldn't happen, but handle it gracefully
+                    setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), 0));
+                    return false;
+                }
+                currentTurn = null;
+                driveState = DriveState.DRIVING;
+                trajectoryStartTime = Actions.now();
+            } else {
+                // Already at position, just need to turn
+                currentTrajectory = null;
+                currentTurn = new TimeTurn(
+                        pose,
+                        targetHeadingRad,
+                        defaultTurnConstraints
+                );
+                driveState = DriveState.TURNING;
+                trajectoryStartTime = Actions.now();
+            }
+        }
+        
+        // Execute the current trajectory or turn
+        double currentTime = Actions.now();
+        double elapsed = currentTime - trajectoryStartTime;
+        
+        if (driveState == DriveState.DRIVING && currentTrajectory != null) {
+            if (elapsed >= currentTrajectory.duration) {
+                // Trajectory complete, now turn to final heading
+                currentTrajectory = null;
+                currentTurn = new TimeTurn(
+                        pose,
+                        targetHeadingRad,
+                        defaultTurnConstraints
+                );
+                driveState = DriveState.TURNING;
+                trajectoryStartTime = currentTime;
+                elapsed = 0;
+            } else {
+                // Follow the trajectory
+                Pose2dDual<Time> txWorldTarget = currentTrajectory.get(elapsed);
+                PoseVelocity2d robotVelRobot = updatePoseEstimate();
+                
+                PoseVelocity2dDual<Time> command = new HolonomicController(
+                        PARAMS.axialGain, PARAMS.lateralGain, PARAMS.headingGain,
+                        PARAMS.axialVelGain, PARAMS.lateralVelGain, PARAMS.headingVelGain
+                ).compute(txWorldTarget, pose, robotVelRobot);
+                
+                MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
+                double voltage = voltageSensor.getVoltage();
+                final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
+                        PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+                
+                leftFront.setPower(feedforward.compute(wheelVels.leftFront) / voltage);
+                leftBack.setPower(feedforward.compute(wheelVels.leftBack) / voltage);
+                rightBack.setPower(feedforward.compute(wheelVels.rightBack) / voltage);
+                rightFront.setPower(feedforward.compute(wheelVels.rightFront) / voltage);
+            }
+        }
+        
+        if (driveState == DriveState.TURNING && currentTurn != null) {
+            if (elapsed >= currentTurn.duration) {
+                // Turn complete
+                setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), 0));
+                currentTurn = null;
+                driveState = DriveState.IDLE;
+            } else {
+                // Follow the turn
+                Pose2dDual<Time> txWorldTarget = currentTurn.get(elapsed);
+                PoseVelocity2d robotVelRobot = updatePoseEstimate();
+                
+                PoseVelocity2dDual<Time> command = new HolonomicController(
+                        PARAMS.axialGain, PARAMS.lateralGain, PARAMS.headingGain,
+                        PARAMS.axialVelGain, PARAMS.lateralVelGain, PARAMS.headingVelGain
+                ).compute(txWorldTarget, pose, robotVelRobot);
+                
+                MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
+                double voltage = voltageSensor.getVoltage();
+                final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
+                        PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
+                
+                leftFront.setPower(feedforward.compute(wheelVels.leftFront) / voltage);
+                leftBack.setPower(feedforward.compute(wheelVels.leftBack) / voltage);
+                rightBack.setPower(feedforward.compute(wheelVels.rightBack) / voltage);
+                rightFront.setPower(feedforward.compute(wheelVels.rightFront) / voltage);
+            }
+        }
+        
+        return false;
     }
     
     private void moveTo(Pose2d target, double speed) {
