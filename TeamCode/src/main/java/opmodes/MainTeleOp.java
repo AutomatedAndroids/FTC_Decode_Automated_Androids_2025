@@ -6,6 +6,7 @@ import com.arcrobotics.ftclib.command.InstantCommand;
 import com.arcrobotics.ftclib.command.button.Trigger;
 import com.arcrobotics.ftclib.gamepad.GamepadEx;
 import com.arcrobotics.ftclib.gamepad.GamepadKeys;
+import com.arcrobotics.ftclib.hardware.ServoEx;
 import com.arcrobotics.ftclib.hardware.motors.CRServo;
 import com.arcrobotics.ftclib.hardware.motors.Motor;
 import com.arcrobotics.ftclib.hardware.motors.MotorEx;
@@ -41,15 +42,13 @@ public class MainTeleOp extends CommandOpMode {
 
         // 1. Initialize Subsystems - disable Pinpoint for blind drive
         drive = new MecanumSubsystem(hardwareMap, new Pose2d(0,0,0), false, telemetry);
-        
-        try {
-            CRServo leftFeeder = new CRServo(hardwareMap, "leftFeeder");
-            CRServo rightFeeder = new CRServo(hardwareMap, "rightFeeder");
-            MotorEx shooterMotor = new MotorEx(hardwareMap, "shooter");
-            shooter = new ShooterSubsystem(leftFeeder, rightFeeder, shooterMotor, telemetry);
-        } catch (Exception e) {
-            telemetry.addData("Warning", "Shooter failed to init");
-        }
+
+        CRServo leftFeeder = new CRServo(hardwareMap, "leftFeeder");
+        CRServo rightFeeder = new CRServo(hardwareMap, "rightFeeder");
+        Servo leftSaftey = hardwareMap.get(Servo.class, "leftSafety");
+        Servo rightSaftey = hardwareMap.get(Servo.class, "rightSafety");
+        MotorEx shooterMotor = new MotorEx(hardwareMap, "shooter");
+        shooter = new ShooterSubsystem(leftFeeder, rightFeeder, shooterMotor, leftSaftey, rightSaftey, telemetry);
 
         try {
             Motor intakeMotor = new Motor(hardwareMap, "intake");
