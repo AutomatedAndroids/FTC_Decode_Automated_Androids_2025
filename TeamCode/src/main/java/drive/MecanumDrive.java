@@ -220,10 +220,17 @@ public class MecanumDrive {
             // Calculate heading change from IMU
             double headingDelta = heading.minus(lastHeading);
 
+            // Fix lateral direction - negate the y (lateral) component
+            // This corrects the case where strafing right shows as going left in odometry
+            Vector2dDual<Time> correctedLine = new Vector2dDual<>(
+                    encoderTwist.line.x,  // X component (forward) - keep as is
+                    encoderTwist.line.y.times(-1)  // Y component (lateral) - negate to fix direction
+            );
+
             // Combine encoder-based position with IMU-based heading
             // Use encoder twist for x/y position, but replace angular component with IMU heading
             Twist2dDual<Time> twist = new Twist2dDual<>(
-                    encoderTwist.line,  // Position from encoders
+                    correctedLine,  // Position from encoders (with corrected lateral direction)
                     new DualNum<Time>(new double[]{
                             headingDelta,      // Heading delta from IMU (position)
                             angularVelocityRad // Angular velocity from IMU (velocity)
@@ -729,139 +736,111 @@ public class MecanumDrive {
     private DriveState driveState = DriveState.IDLE;
     private Pose2d driveTarget = null;
     
+    // Simple PID-like gains for driveToPosition (works without tuning)
+    private static final double SIMPLE_P_GAIN = 0.05;
+    private static final double SIMPLE_I_GAIN = 0.0;
+    private static final double SIMPLE_D_GAIN = 0.01;
+    private static final double MAX_POWER = 0.6;
+    private double lastXError = 0;
+    private double lastYError = 0;
+    private double lastHeadingError = 0;
+    private double xErrorIntegral = 0;
+    private double yErrorIntegral = 0;
+    private double headingErrorIntegral = 0;
+    
     /**
-     * Drive to position using RoadRunner's trajectory system (much better!).
-     * Returns true when complete. This uses proper motion profiles and path following.
+     * Drive to position using a simple PID-like controller.
+     * Works even without tuned RoadRunner parameters.
+     * Returns true when complete.
      */
     public boolean driveToPosition(double targetXTicks, double targetYTicks, double targetHeadingRad) {
         updatePoseEstimate();
         
         double targetX = targetXTicks / TICKS_PER_INCH;
         double targetY = targetYTicks / TICKS_PER_INCH;
-        Pose2d target = new Pose2d(targetX, targetY, targetHeadingRad);
+        
+        // Calculate errors
+        double xError = targetX - pose.position.x;
+        double yError = targetY - pose.position.y;
+        double headingError = targetHeadingRad - pose.heading.toDouble();
+        
+        // Normalize heading error to [-pi, pi]
+        while (headingError > Math.PI) headingError -= 2 * Math.PI;
+        while (headingError <= -Math.PI) headingError += 2 * Math.PI;
+        
+        double dist = Math.hypot(xError, yError);
         
         // Check if we've reached the target
-        double dist = Math.hypot(targetX - pose.position.x, targetY - pose.position.y);
-        double hError = targetHeadingRad - pose.heading.toDouble();
-        while (hError > Math.PI) hError -= 2 * Math.PI;
-        while (hError <= -Math.PI) hError += 2 * Math.PI;
-        
-        if (dist < TOLERANCE && Math.abs(hError) < Math.toRadians(5)) {
+        if (dist < TOLERANCE && Math.abs(headingError) < Math.toRadians(5)) {
             // We're there! Stop and reset
             setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), 0));
-            currentTrajectory = null;
-            currentTurn = null;
-            driveState = DriveState.IDLE;
-            driveTarget = null;
+            xErrorIntegral = 0;
+            yErrorIntegral = 0;
+            headingErrorIntegral = 0;
+            lastXError = 0;
+            lastYError = 0;
+            lastHeadingError = 0;
             return true;
         }
         
-        // If target changed or we're idle, plan a new trajectory
-        if (driveTarget == null || 
-            Math.hypot(target.position.x - driveTarget.position.x, 
-                      target.position.y - driveTarget.position.y) > 0.5 ||
-            Math.abs(target.heading.toDouble() - driveTarget.heading.toDouble()) > Math.toRadians(10) ||
-            driveState == DriveState.IDLE) {
-            
-            driveTarget = target;
-            
-            // Plan trajectory: first drive to position, then turn to heading
-            if (dist > TOLERANCE) {
-                // Build trajectory to target position using splineTo
-                // Use current heading for the spline, we'll turn to final heading after
-                Action trajectoryAction = actionBuilder(pose)
-                        .splineTo(new Vector2d(targetX, targetY), pose.heading.toDouble())
-                        .build();
-                // Extract the TimeTrajectory from the TrajectoryAction
-                if (trajectoryAction instanceof TrajectoryAction) {
-                    currentTrajectory = ((TrajectoryAction) trajectoryAction).timeTrajectory;
-                } else {
-                    // Fallback: if it's not a TrajectoryAction, we can't use it
-                    // This shouldn't happen, but handle it gracefully
-                    setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), 0));
-                    return false;
-                }
-                currentTurn = null;
-                driveState = DriveState.DRIVING;
-                trajectoryStartTime = Actions.now();
-            } else {
-                // Already at position, just need to turn
-                currentTrajectory = null;
-                currentTurn = new TimeTurn(
-                        pose,
-                        targetHeadingRad,
-                        defaultTurnConstraints
-                );
-                driveState = DriveState.TURNING;
-                trajectoryStartTime = Actions.now();
-            }
+        // Calculate PID terms for position
+        xErrorIntegral += xError;
+        yErrorIntegral += yError;
+        headingErrorIntegral += headingError;
+        
+        // Limit integral to prevent windup
+        xErrorIntegral = Math.max(-10, Math.min(10, xErrorIntegral));
+        yErrorIntegral = Math.max(-10, Math.min(10, yErrorIntegral));
+        headingErrorIntegral = Math.max(-2, Math.min(2, headingErrorIntegral));
+        
+        double xP = SIMPLE_P_GAIN * xError;
+        double xI = SIMPLE_I_GAIN * xErrorIntegral;
+        double xD = SIMPLE_D_GAIN * (xError - lastXError);
+        double xCommand = xP + xI + xD;
+        
+        double yP = SIMPLE_P_GAIN * yError;
+        double yI = SIMPLE_I_GAIN * yErrorIntegral;
+        double yD = SIMPLE_D_GAIN * (yError - lastYError);
+        double yCommand = yP + yI + yD;
+        
+        double headingP = SIMPLE_P_GAIN * 2 * headingError; // Scale up heading gain
+        double headingI = SIMPLE_I_GAIN * headingErrorIntegral;
+        double headingD = SIMPLE_D_GAIN * (headingError - lastHeadingError);
+        double headingCommand = headingP + headingI + headingD;
+        
+        // Convert world-frame commands to robot-frame
+        double cosHeading = Math.cos(pose.heading.toDouble());
+        double sinHeading = Math.sin(pose.heading.toDouble());
+        
+        // Rotate world-frame error to robot frame
+        double forward = xCommand * cosHeading + yCommand * sinHeading;
+        double strafe = -xCommand * sinHeading + yCommand * cosHeading;
+        double turn = headingCommand;
+        
+        // Limit power
+        double maxCommand = Math.max(Math.abs(forward), Math.max(Math.abs(strafe), Math.abs(turn)));
+        if (maxCommand > MAX_POWER) {
+            forward = (forward / maxCommand) * MAX_POWER;
+            strafe = (strafe / maxCommand) * MAX_POWER;
+            turn = (turn / maxCommand) * MAX_POWER;
         }
         
-        // Execute the current trajectory or turn
-        double currentTime = Actions.now();
-        double elapsed = currentTime - trajectoryStartTime;
-        
-        if (driveState == DriveState.DRIVING && currentTrajectory != null) {
-            if (elapsed >= currentTrajectory.duration) {
-                // Trajectory complete, now turn to final heading
-                currentTrajectory = null;
-                currentTurn = new TimeTurn(
-                        pose,
-                        targetHeadingRad,
-                        defaultTurnConstraints
-                );
-                driveState = DriveState.TURNING;
-                trajectoryStartTime = currentTime;
-                elapsed = 0;
-            } else {
-                // Follow the trajectory
-                Pose2dDual<Time> txWorldTarget = currentTrajectory.get(elapsed);
-                PoseVelocity2d robotVelRobot = updatePoseEstimate();
-                
-                PoseVelocity2dDual<Time> command = new HolonomicController(
-                        PARAMS.axialGain, PARAMS.lateralGain, PARAMS.headingGain,
-                        PARAMS.axialVelGain, PARAMS.lateralVelGain, PARAMS.headingVelGain
-                ).compute(txWorldTarget, pose, robotVelRobot);
-                
-                MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
-                double voltage = voltageSensor.getVoltage();
-                final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
-                        PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
-                
-                leftFront.setPower(feedforward.compute(wheelVels.leftFront) / voltage);
-                leftBack.setPower(feedforward.compute(wheelVels.leftBack) / voltage);
-                rightBack.setPower(feedforward.compute(wheelVels.rightBack) / voltage);
-                rightFront.setPower(feedforward.compute(wheelVels.rightFront) / voltage);
-            }
+        // Apply deadband for small errors
+        if (dist < 0.5) {
+            forward *= dist / 0.5;
+            strafe *= dist / 0.5;
+        }
+        if (Math.abs(headingError) < Math.toRadians(2)) {
+            turn *= Math.abs(headingError) / Math.toRadians(2);
         }
         
-        if (driveState == DriveState.TURNING && currentTurn != null) {
-            if (elapsed >= currentTurn.duration) {
-                // Turn complete
-                setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), 0));
-                currentTurn = null;
-                driveState = DriveState.IDLE;
-            } else {
-                // Follow the turn
-                Pose2dDual<Time> txWorldTarget = currentTurn.get(elapsed);
-                PoseVelocity2d robotVelRobot = updatePoseEstimate();
-                
-                PoseVelocity2dDual<Time> command = new HolonomicController(
-                        PARAMS.axialGain, PARAMS.lateralGain, PARAMS.headingGain,
-                        PARAMS.axialVelGain, PARAMS.lateralVelGain, PARAMS.headingVelGain
-                ).compute(txWorldTarget, pose, robotVelRobot);
-                
-                MecanumKinematics.WheelVelocities<Time> wheelVels = kinematics.inverse(command);
-                double voltage = voltageSensor.getVoltage();
-                final MotorFeedforward feedforward = new MotorFeedforward(PARAMS.kS,
-                        PARAMS.kV / PARAMS.inPerTick, PARAMS.kA / PARAMS.inPerTick);
-                
-                leftFront.setPower(feedforward.compute(wheelVels.leftFront) / voltage);
-                leftBack.setPower(feedforward.compute(wheelVels.leftBack) / voltage);
-                rightBack.setPower(feedforward.compute(wheelVels.rightBack) / voltage);
-                rightFront.setPower(feedforward.compute(wheelVels.rightFront) / voltage);
-            }
-        }
+        // Drive the robot
+        setDrivePowers(forward, strafe, turn);
+        
+        // Store errors for next iteration
+        lastXError = xError;
+        lastYError = yError;
+        lastHeadingError = headingError;
         
         return false;
     }

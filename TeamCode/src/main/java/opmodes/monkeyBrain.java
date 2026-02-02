@@ -96,10 +96,12 @@ public class monkeyBrain extends LinearOpMode {
         leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
 
         try {
-            com.arcrobotics.ftclib.hardware.motors.CRServo leftFeeder = new com.arcrobotics.ftclib.hardware.motors.CRServo(hardwareMap, "leftFeeder");
-            com.arcrobotics.ftclib.hardware.motors.CRServo rightFeeder = new CRServo(hardwareMap, "rightFeeder");
+            CRServo leftFeeder = new CRServo(hardwareMap, "leftFeeder");
+            CRServo rightFeeder = new CRServo(hardwareMap, "rightFeeder");
+            Servo leftSaftey = hardwareMap.get(Servo.class, "leftSafety");
+            Servo rightSaftey = hardwareMap.get(Servo.class, "rightSafety");
             MotorEx shooterMotor = new MotorEx(hardwareMap, "shooter");
-            shooter = new ShooterSubsystem(leftFeeder, rightFeeder, shooterMotor, telemetry);
+            shooter = new ShooterSubsystem(leftFeeder, rightFeeder, shooterMotor, leftSaftey, rightSaftey, telemetry);
         } catch (Exception e) {
             telemetry.addData("Warning", "Shooter failed to init");
         }
