@@ -84,16 +84,13 @@ public class ShooterSubsystem extends SubsystemBase{
     }
 
     public void feedRight() {
-        rightFeeder.set(1);
-        rightSaftey.setPosition(SERVO_BOTTOM);
+        rightFeeder.set(-1);
+        rightSaftey.setPosition(SERVO_TOP);
     }
 
     public void feed() {
-
-        leftFeeder.set(1);
-        rightFeeder.set(1);
-        leftSaftey.setPosition(SERVO_BOTTOM);
-        rightSaftey.setPosition(SERVO_BOTTOM);
+        feedLeft();
+        feedRight();
     }
 
     public void stopLeft() {
@@ -105,15 +102,12 @@ public class ShooterSubsystem extends SubsystemBase{
     public void stopRight() {
         rightFeeder.set(-0.001);
         // Ensures velocity is cleared
-        rightSaftey.setPosition(SERVO_TOP);
+        rightSaftey.setPosition(SERVO_BOTTOM);
     }
 
     public void stopFeeding() {
-        leftFeeder.set(-0.001);
-        rightFeeder.set(-0.001);
-        // Ensures velocity is cleared
-        leftSaftey.setPosition(SERVO_TOP);
-        rightSaftey.setPosition(SERVO_TOP);
+        stopLeft();
+        stopRight();
     }
 
     public void stopFlywheels() {
